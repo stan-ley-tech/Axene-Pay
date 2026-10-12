@@ -11,6 +11,10 @@ deps-up: ## Start local PostgreSQL, Redis, RabbitMQ
 deps-down: ## Stop local dependencies (keeps data volume)
 	$(COMPOSE) down
 
+.PHONY: migrate
+migrate: ## Apply database migrations (DATABASE_URL from .env)
+	set -a; [ -f .env ] && . ./.env; set +a; go run ./cmd/migrate up
+
 .PHONY: build run-api
 build: ## Build all binaries into ./bin
 	go build -o bin/ ./cmd/...
@@ -26,7 +30,7 @@ vet: ## go vet
 	go vet ./...
 test: ## Unit tests with race detector
 	go test -race -count=1 ./...
-test-integration: ## Integration tests (needs TEST_DATABASE_URL or Docker)
+test-integration: ## Unit + integration tests (needs TEST_DATABASE_URL)
 	go test -race -count=1 -tags=integration ./...
 vuln: ## Scan dependencies for known vulnerabilities
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...

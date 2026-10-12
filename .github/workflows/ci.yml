@@ -38,6 +38,34 @@ jobs:
       - name: govulncheck
         run: make vuln
 
+  integration:
+    name: Integration tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: axene
+          POSTGRES_PASSWORD: axene_ci_only
+          POSTGRES_DB: axene_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axene -d axene_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://axene:axene_ci_only@localhost:5432/axene_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Integration tests (race detector)
+        run: make test-integration
+
   openapi:
     name: OpenAPI lint
     runs-on: ubuntu-latest
