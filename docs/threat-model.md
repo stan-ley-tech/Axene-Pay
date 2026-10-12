@@ -38,7 +38,20 @@ worker ↔ provider APIs. Portals: browser ↔ SvelteKit server ↔ api.
 | T14 | Sandbox credentials/config used in production | Tampering | Config validation binds endpoints to environment; testprovider barred in production | 0–1 |
 | T15 | Compromised dependency | Tampering | Pinned versions, govulncheck, minimal deps | 0 |
 
-## 4. Accepted / unresolved risks (Phase 0)
+## 4. Implementation status (end of Phase 1)
+
+- Implemented and tested: T3 (merchant-scoped queries, isolation tests),
+  T5 (idempotency keys, concurrency test), T13 (`SUBMISSION_UNKNOWN`,
+  no resubmission, no failover while uncertain), T14 (simulated provider
+  refused in production, deployed-environment config rules), T8 in part
+  (secret types, route-pattern access logs, canary log tests), T2 in part
+  (duplicate callbacks are inert; ledger uniqueness arrives in Phase 3), and
+  T1 in part (callbacks never confirm a payment; secret path token).
+- Not yet implemented: IP allow-listing (needs Safaricom ranges, X-05),
+  rate limiting (T12), audit log of administrative actions (T7), payout
+  controls (T4), portal controls (T10, T11), webhook SSRF controls (T9).
+
+## 5. Accepted / unresolved risks (Phase 0)
 
 - **R1**: Daraja callbacks may be unsigned (to verify). Mitigated, not
   eliminated, by T1 controls.

@@ -3,9 +3,11 @@
 Axene-owned payment gateway, payment orchestration, and financial operations
 infrastructure.
 
-> **Status: Phase 0 — project foundation.** No payment rail is integrated.
-> Nothing in this repository processes real money. See
-> [docs/roadmap.md](docs/roadmap.md) for what exists and what does not.
+> **Status: Phase 1 — core payment foundation.** Payments can be created,
+> verified, and tracked end to end against a **simulated provider only**.
+> No payment rail is integrated and nothing here processes real money. See
+> [docs/roadmap.md](docs/roadmap.md) and
+> [docs/known-limitations.md](docs/known-limitations.md).
 
 ## What this platform will do
 
@@ -19,9 +21,11 @@ is the proposed first integration.
 | Path                | Purpose                                                        |
 | ------------------- | -------------------------------------------------------------- |
 | `cmd/api`           | HTTP API process (merchant-facing REST API + provider callbacks) |
-| `cmd/worker`        | Background worker process (outbox relay, status polling, webhooks) — *not yet created* |
+| `cmd/worker`        | Background worker (submission recovery, status-query verification, outbox relay) |
+| `cmd/migrate`       | Applies database migrations (a separate deployment step) |
+| `cmd/axenectl`      | Administrative setup of merchants, destinations, provider configs, API keys |
 | `internal/`         | Go domain modules (one package tree per bounded context)       |
-| `migrations/`       | PostgreSQL schema migrations — *created in Phase 1*            |
+| `migrations/`       | PostgreSQL schema migrations (goose)                           |
 | `api-spec/`         | OpenAPI contract (source of truth for the public API)          |
 | `apps/`             | SvelteKit frontends — *created in Phase 4*                     |
 | `deployments/`      | Local and cloud deployment configuration                       |
@@ -37,6 +41,7 @@ setup. Short version:
 ```sh
 cp .env.example .env
 docker compose -f deployments/local/docker-compose.yml up -d
+make migrate
 make test
 make run-api
 ```

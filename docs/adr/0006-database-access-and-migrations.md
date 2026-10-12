@@ -6,8 +6,12 @@
 ## Decision
 
 - **pgx v5** connection pool (`pgxpool`); no `database/sql` layer.
-- **sqlc** generates typed Go from hand-written SQL in each module's
-  `queries/*.sql`. Generated code is committed so builds do not require sqlc.
+- **sqlc** generates typed Go from hand-written SQL. Generated code is
+  committed so builds do not require sqlc. *Amended 2026-10-12:* queries
+  live in `internal/store/queries`, one file per owning module, generating
+  a single `store` package, because transactions that must span modules
+  (transition + outbox event) need one `Queries` type. CI rebuilds sqlc
+  from source and fails if the committed code is stale.
 - **goose** SQL migrations in `migrations/`, numbered sequentially
   (`00001_create_merchants.sql`). sqlc reads the same directory as its schema
   source, so there is one schema definition.

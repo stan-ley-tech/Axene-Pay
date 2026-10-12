@@ -34,6 +34,15 @@ payment, refund, or payout.
   unique `(source_type, source_id, posting_reason)` constraint so a replayed
   event cannot double-post.
 
+## Amendment (2026-10-12)
+
+If the request that owns a key dies after creating its resource but before
+storing the response, the key would otherwise answer `409` until it
+expires. Keys therefore record the created resource's ID; an in-progress
+key older than the recovery window (longer than a provider call) is answered
+with the resource's current state. Requests rejected before any side effect
+(validation, no eligible provider) store no key.
+
 ## Consequences
 
 - Idempotency correctness depends on DB uniqueness, not on Redis or locks.

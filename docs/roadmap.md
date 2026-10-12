@@ -15,54 +15,58 @@ Status values: ✅ done · 🟡 in progress · ⬜ not started.
 | Money type with exhaustive unit tests | ✅ |
 | OpenAPI skeleton with error envelope and conventions | ✅ |
 | CI runs format check, vet, tests, vulnerability scan | ✅ |
-| Local stack verified end-to-end on a machine with Docker | ⬜ (no Docker on the bootstrap machine) |
+| Local stack verified end-to-end on a machine with Docker | ⬜ (no Docker on the bootstrap machine; PostgreSQL verified with a native install, RabbitMQ in CI) |
 
-## Phase 1 — Core payment foundation 🟡
+## Phase 1 — Core payment foundation ✅
 
 Built against the clearly labelled `testprovider`; no real provider traffic.
 Decisions: [ADR-0008](adr/0008-direct-merchant-settlement.md),
 [ADR-0009](adr/0009-callback-verification.md),
 [payment-lifecycle.md](payment-lifecycle.md).
 
-Acceptance criteria:
+Acceptance criteria (all verified locally against PostgreSQL and in CI; see
+[known-limitations.md](known-limitations.md) for what Phase 1 does not do):
 
-1. Migrations create merchants, settlement destinations, merchant provider
+1. ✅ Migrations create merchants, settlement destinations, merchant provider
    configurations, API keys, idempotency keys, payments, payment attempts,
    payment transitions, provider callbacks, outbox events, and
    reconciliation exceptions. Append-only tables reject `UPDATE`/`DELETE`.
-2. API key authentication with hashed keys; live keys only for approved
+2. ✅ API key authentication with hashed keys; live keys only for approved
    merchants; isolation test proves merchant A gets `404` for merchant B's
    payment.
-3. `POST /v1/payments` requires `Idempotency-Key`; replay returns the
+3. ✅ `POST /v1/payments` requires `Idempotency-Key`; replay returns the
    identical response; conflicting reuse returns `422`; concurrent duplicate
    requests produce exactly one payment (real PostgreSQL).
-4. `GET /v1/payments/{id}` returns state, settlement destination, and
+4. ✅ `GET /v1/payments/{id}` returns state, settlement destination, and
    attempt summary; `POST /v1/payments/{id}/cancel` only succeeds from
    `CREATED`.
-5. State machine rejects every (from, to, evidence) combination not in
+5. ✅ State machine rejects every (from, to, evidence) combination not in
    the documented table; callbacks can never produce terminal states
    (exhaustive table-driven test).
-6. Routing is deterministic from merchant provider configuration and
-   records the selected provider and reason; no eligible provider →
-   `FAILED` with reason.
-7. Callback ingestion stores the raw callback before interpretation,
+6. ✅ Routing is deterministic from merchant provider configuration and
+   records the selected provider and reason. *Refined:* when no provider is
+   eligible the request is rejected with `422 no_eligible_provider` and no
+   payment is created, because nothing has happened financially; the
+   `CREATED → FAILED (routing)` transition remains for providers that become
+   unavailable between creation and submission.
+7. ✅ Callback ingestion stores the raw callback before interpretation,
    deduplicates, correlates, and moves the payment to
    `PENDING_VERIFICATION`; unknown references create an `unmatched_callback`
    exception.
-8. Worker verifies by status query with backoff: success/failure only on a
+8. ✅ Worker verifies by status query with backoff: success/failure only on a
    matching definitive result; timeouts never fail a payment; exhaustion or
    conflict → `UNRESOLVED` + reconciliation exception; payments with no
    callback are polled; stale `PENDING_SUBMISSION` attempts are submitted.
-9. Each transition writes exactly one transition row and one outbox event,
+9. ✅ Each transition writes exactly one transition row and one outbox event,
    even under duplicate callbacks and concurrent processing (tested).
-10. Outbox relay publishes to RabbitMQ at least once and marks events
+10. ✅ Outbox relay publishes to RabbitMQ at least once and marks events
     published (integration-tested in CI with a RabbitMQ service).
-11. Every API response and error matches the OpenAPI contract (contract
+11. ✅ Every API response and error matches the OpenAPI contract (contract
     test).
-12. Logs carry correlation IDs; a canary secret never appears in logs;
+12. ✅ Logs carry correlation IDs; a canary secret never appears in logs;
     Prometheus metrics exposed for requests, transitions, provider calls,
     verification, and outbox backlog.
-13. Admin CLI creates merchants, settlement destinations, provider
+13. ✅ Admin CLI creates merchants, settlement destinations, provider
     configurations, and API keys (key printed once).
 
 ## Phase 2 — M-Pesa Express sandbox integration ⬜
