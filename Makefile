@@ -11,6 +11,10 @@ deps-up: ## Start local PostgreSQL, Redis, RabbitMQ
 deps-down: ## Stop local dependencies (keeps data volume)
 	$(COMPOSE) down
 
+.PHONY: generate
+generate: ## Regenerate database code from internal/store/queries (sqlc v1.31.1)
+	sqlc generate
+
 .PHONY: migrate
 migrate: ## Apply database migrations (DATABASE_URL from .env)
 	set -a; [ -f .env ] && . ./.env; set +a; go run ./cmd/migrate up

@@ -66,6 +66,22 @@ jobs:
       - name: Integration tests (race detector)
         run: make test-integration
 
+  generated:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Regenerate with sqlc built from source
+        run: go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+      - name: Fail if generated code differs from what is committed
+        run: |
+          git status --porcelain internal/store
+          test -z "$(git status --porcelain internal/store)"
+
   openapi:
     name: OpenAPI lint
     runs-on: ubuntu-latest
