@@ -18,4 +18,5 @@ claimed until it is implemented and verified.
   metrics exporter yet.
 - Local stack (`deployments/local/docker-compose.yml`) has not been run on
   the bootstrap machine because Docker is not installed there.
-- CI workflow has not yet run on GitHub.
+- The race detector (`go test -race`) needs cgo and is not run on the Windows
+  bootstrap machine; it runs in CI on Linux.
