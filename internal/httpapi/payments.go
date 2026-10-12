@@ -8,10 +8,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stan-ley-tech/axene-pay/internal/apiview"
 	"github.com/stan-ley-tech/axene-pay/internal/idempotency"
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/httpx"
@@ -69,7 +69,7 @@ func (h paymentHandlers) create(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(res.Replay.ResponseBody)
 		return
 	}
-	body, err := json.Marshal(render(*res.Payment))
+	body, err := json.Marshal(apiview.Payment(*res.Payment))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -118,7 +118,7 @@ func (h paymentHandlers) get(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, r, http.StatusOK, render(v))
+	httpx.WriteJSON(w, r, http.StatusOK, apiview.Payment(v))
 }
 
 func (h paymentHandlers) cancel(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +128,7 @@ func (h paymentHandlers) cancel(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.WriteJSON(w, r, http.StatusOK, render(v))
+	httpx.WriteJSON(w, r, http.StatusOK, apiview.Payment(v))
 }
 
 func (h paymentHandlers) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -179,62 +179,6 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
-}
-
-type paymentJSON struct {
-	ID            string  `json:"id"`
-	Object        string  `json:"object"`
-	Environment   string  `json:"environment"`
-	Status        string  `json:"status"`
-	StatusReason  *string `json:"status_reason"`
-	Amount        int64   `json:"amount"`
-	Currency      string  `json:"currency"`
-	PaymentMethod struct {
-		Type        string `json:"type"`
-		PhoneNumber string `json:"phone_number"`
-	} `json:"payment_method"`
-	Description           string  `json:"description"`
-	MerchantReference     *string `json:"merchant_reference"`
-	SettlementDestination struct {
-		ID         string `json:"id"`
-		Type       string `json:"type"`
-		Identifier string `json:"identifier"`
-	} `json:"settlement_destination"`
-	Attempts  []attemptJSON `json:"attempts"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
-}
-
-type attemptJSON struct {
-	ID          string     `json:"id"`
-	Provider    string     `json:"provider"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	SubmittedAt *time.Time `json:"submitted_at"`
-	ResolvedAt  *time.Time `json:"resolved_at"`
-}
-
-func render(v payments.View) paymentJSON {
-	out := paymentJSON{
-		ID: v.ID, Object: "payment", Environment: v.Environment, Status: string(v.Status), StatusReason: v.StatusReason,
-		Amount: v.Amount, Currency: v.Currency, Description: v.Description, MerchantReference: v.MerchantReference,
-		Attempts: make([]attemptJSON, 0, len(v.Attempts)), CreatedAt: v.CreatedAt.UTC(), UpdatedAt: v.UpdatedAt.UTC(),
-	}
-	out.PaymentMethod.Type, out.PaymentMethod.PhoneNumber = v.Method, v.PhoneNumberMasked
-	out.SettlementDestination.ID, out.SettlementDestination.Type, out.SettlementDestination.Identifier = v.Destination.ID, v.Destination.Type, v.Destination.Identifier
-	for _, a := range v.Attempts {
-		out.Attempts = append(out.Attempts, attemptJSON{ID: a.ID, Provider: a.Provider, Status: string(a.Status),
-			CreatedAt: a.CreatedAt.UTC(), SubmittedAt: utc(a.SubmittedAt), ResolvedAt: utc(a.ResolvedAt)})
-	}
-	return out
-}
-
-func utc(t *time.Time) *time.Time {
-	if t == nil {
-		return nil
-	}
-	u := t.UTC()
-	return &u
 }
 
 // callbackHandler receives provider callbacks at /callbacks/{provider}/{token}.
