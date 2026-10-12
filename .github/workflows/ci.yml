@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: make fmt-check
+      - name: go vet
+        run: make vet
+      - name: Unit tests (race detector)
+        run: make test
+      - name: Build binaries
+        run: make build
+      - name: Forbid floating point in the money path
+        run: |
+          if grep -rnE '\bfloat(32|64)\b' internal/platform/money --include='*.go'; then
+            echo "floating point found in money package"; exit 1
+          fi
+      - name: govulncheck
+        run: make vuln
+
+  openapi:
+    name: OpenAPI lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Lint contract
+        run: npx --yes @redocly/cli@1 lint api-spec/openapi.yaml
