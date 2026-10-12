@@ -47,9 +47,13 @@ worker ↔ provider APIs. Portals: browser ↔ SvelteKit server ↔ api.
   (secret types, route-pattern access logs, canary log tests), T2 in part
   (duplicate callbacks are inert; ledger uniqueness arrives in Phase 3), and
   T1 in part (callbacks never confirm a payment; secret path token).
+- Implemented in Phase 2a: T9 (webhook destinations checked at connect time
+  against private, loopback, link-local, metadata and reserved ranges; no
+  redirects; HTTPS required in deployed environments) and signed,
+  timestamped webhook payloads so merchants can reject forgeries and replays.
 - Not yet implemented: IP allow-listing (needs Safaricom ranges, X-05),
   rate limiting (T12), audit log of administrative actions (T7), payout
-  controls (T4), portal controls (T10, T11), webhook SSRF controls (T9).
+  controls (T4), portal controls (T10, T11).
 
 ## 5. Accepted / unresolved risks (Phase 0)
 

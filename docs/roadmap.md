@@ -71,18 +71,18 @@ Acceptance criteria (all verified locally against PostgreSQL and in CI; see
 
 ## Phase 2 — Notifications and M-Pesa Express sandbox 🟡
 
-### 2a. Merchant webhooks (no external dependency) 🟡
+### 2a. Merchant webhooks (no external dependency) ✅
 
 Design: [ADR-0010](adr/0010-merchant-webhooks.md).
 
-1. ⬜ Merchants manage webhook endpoints by API; signing secrets are shown
+1. ✅ Merchants manage webhook endpoints by API; signing secrets are shown
    once and stored encrypted.
-2. ⬜ Every payment event is fanned out exactly once per subscribed endpoint,
+2. ✅ Every payment event is fanned out exactly once per subscribed endpoint,
    via RabbitMQ and a database sweep that covers lost messages.
-3. ⬜ Deliveries are signed (timestamped HMAC), retried with exponential
+3. ✅ Deliveries are signed (timestamped HMAC), retried with exponential
    backoff, marked dead after the maximum attempts, and replayable.
-4. ⬜ Delivery history (every attempt) is visible to the merchant by API.
-5. ⬜ The delivery client refuses private, loopback, link-local and metadata
+4. ✅ Delivery history (every attempt) is visible to the merchant by API.
+5. ✅ The delivery client refuses private, loopback, link-local and metadata
    addresses and follows no redirects.
 
 ### 2b. M-Pesa Express adapter ⬜ (blocked)

@@ -77,6 +77,23 @@ The payment moves to `PENDING_VERIFICATION`; the worker then confirms it by
 status query (ADR-0009). Without a callback the worker queries after
 the initial verification delay.
 
+## Receiving webhooks locally
+
+With `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` (development only) you can point an
+endpoint at a local receiver:
+
+```sh
+curl -s localhost:8080/v1/webhook_endpoints -H "Authorization: Bearer sk_test_…" \n  -H "Content-Type: application/json" -d '{"url":"http://127.0.0.1:9000/hooks"}'
+# the response contains "secret": "whsec_…" — shown once
+```
+
+The worker fans out each payment event and POSTs it with an
+`Axene-Signature` header (see ADR-0010 and the OpenAPI description for the
+verification recipe; `webhooks.Verify` is the reference implementation).
+Inspect deliveries with `GET /v1/webhook_endpoints/{id}/deliveries` and
+`GET /v1/webhook_deliveries/{id}`; replay with
+`POST /v1/webhook_deliveries/{id}/replay`.
+
 ## Endpoints
 
 | Path | Auth | Purpose |
@@ -86,6 +103,8 @@ the initial verification delay.
 | `POST /v1/payments` | API key + `Idempotency-Key` | Create a payment |
 | `GET /v1/payments/{id}` | API key | Retrieve a payment |
 | `POST /v1/payments/{id}/cancel` | API key | Cancel before submission |
+| `POST/GET /v1/webhook_endpoints`, `GET /v1/webhook_endpoints/{id}`, `POST …/{id}/disable`, `GET …/{id}/deliveries` | API key | Webhook endpoint management |
+| `GET /v1/webhook_deliveries/{id}`, `POST …/{id}/replay` | API key | Delivery history and replay |
 | `POST /callbacks/{provider}/{token}` | path token + provider-specific | Provider callbacks |
 | `GET /metrics` on `METRICS_ADDR` | network-restricted | Prometheus metrics (api `:9090`, worker `:9091`) |
 
@@ -114,6 +133,9 @@ configuration and report every problem at once. Notable rules:
 | Max verification attempts | 12 | Then `UNRESOLVED` + reconciliation exception |
 | Submission lease | 2 min | Claimed-but-unrecorded submissions become `SUBMISSION_UNKNOWN` |
 | Idempotency key retention | 24 h | Minimum per D-10 |
+| Webhook attempt timeout | 10 s | Per HTTP attempt |
+| Webhook retries | 16 attempts, 30 s doubling to 1 h | About 9 hours, then `dead` (replayable) |
+| Webhook sweep delay | 2 min | Published events without fan-out are swept |
 
 These are operational values, not business rules; revisit them with real
 M-Pesa Express latency data in Phase 2.

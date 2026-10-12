@@ -35,11 +35,14 @@ claimed until it is implemented and verified.
 
 ## Notifications and events
 
-- No merchant webhooks (Phase 2). Outbox events are published to the
-  `axene.events` exchange, but no queues are bound to it yet, so the broker
-  discards them after confirming. The authoritative copy stays in
-  `outbox_events`.
-- Published outbox rows are not yet archived or pruned.
+- Webhook endpoints are managed by API only (no portal until Phase 4). No
+  per-endpoint rate limiting or automatic disabling of persistently failing
+  endpoints.
+- Webhook signing-secret rotation is not exposed yet (create a new endpoint
+  and disable the old one). `WEBHOOK_SECRETS_KEY` rotation has a version
+  column but no re-encryption tooling.
+- Published outbox rows, delivered webhook bodies, and attempt history are
+  not yet archived or pruned (retention is D-09).
 
 ## Security and operations
 
