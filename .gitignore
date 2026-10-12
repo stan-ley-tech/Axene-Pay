@@ -1,0 +1,33 @@
+# Secrets and local configuration — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+
+# Go
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+go.work
+go.work.sum
+
+# Node / SvelteKit
+node_modules/
+.svelte-kit/
+build/
+dist/
+playwright-report/
+test-results/
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
