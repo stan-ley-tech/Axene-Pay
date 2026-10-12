@@ -14,7 +14,7 @@ Status values: ✅ done · 🟡 in progress · ⬜ not started.
 | Go module builds; `api` serves `/healthz` and `/readyz` with validated config, structured logging, correlation IDs | ✅ |
 | Money type with exhaustive unit tests | ✅ |
 | OpenAPI skeleton with error envelope and conventions | ✅ |
-| CI runs format check, vet, tests, vulnerability scan | 🟡 workflow added; first GitHub run pending |
+| CI runs format check, vet, tests, vulnerability scan | ✅ |
 | Local stack verified end-to-end on a machine with Docker | ⬜ (no Docker on the bootstrap machine) |
 
 ## Phase 1 — Core payment foundation ⬜
