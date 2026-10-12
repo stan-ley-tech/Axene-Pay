@@ -31,6 +31,8 @@ var (
 	ErrNotFound = errors.New("webhooks: not found")
 	// ErrNotReplayable means the delivery is still pending.
 	ErrNotReplayable = errors.New("webhooks: delivery is still pending")
+	// ErrUnknownEvent means no outbox event has the given ID.
+	ErrUnknownEvent = errors.New("webhooks: unknown event")
 )
 
 // EventTypes are the event types an endpoint may subscribe to.
@@ -272,7 +274,7 @@ type envelope struct {
 func (s *Service) FanOut(ctx context.Context, eventPublicID string) (int, error) {
 	ev, err := s.q.GetOutboxEventByPublicID(ctx, eventPublicID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("webhooks: event %s not found", eventPublicID)
+		return 0, fmt.Errorf("%w: %s", ErrUnknownEvent, eventPublicID)
 	}
 	if err != nil {
 		return 0, err

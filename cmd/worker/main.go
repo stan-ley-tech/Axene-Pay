@@ -1,6 +1,7 @@
 // Command worker runs Axene's background work: finishing interrupted
 // submissions, verifying provider outcomes by status query, relaying the
-// transactional outbox to RabbitMQ, and pruning expired idempotency keys.
+// transactional outbox to RabbitMQ, fanning out and delivering merchant
+// webhooks, and pruning expired idempotency keys.
 //
 // Every task is safe to run in several worker instances at once: work is
 // claimed in PostgreSQL with leases and SKIP LOCKED.
@@ -22,6 +23,7 @@ import (
 	"github.com/stan-ley-tech/axene-pay/internal/platform/observability"
 	"github.com/stan-ley-tech/axene-pay/internal/providers"
 	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
+	"github.com/stan-ley-tech/axene-pay/internal/webhooks"
 )
 
 const batch = 50
@@ -68,6 +70,19 @@ func run() error {
 		return err
 	}
 
+	sealer, err := webhooks.NewSealer([]byte(cfg.WebhookSecretsKey.Reveal()), 1)
+	if err != nil {
+		return err
+	}
+	webhookSvc, err := webhooks.NewService(webhooks.Deps{
+		Pool: pool, Sealer: sealer, Payments: svc, Policy: webhooks.DefaultPolicy(),
+		RequireHTTPS: cfg.Env.IsDeployed(), AllowPrivateTargets: cfg.WebhookAllowPrivateTargets, Logger: logger,
+	})
+	if err != nil {
+		return err
+	}
+	go webhooks.RunConsumer(ctx, cfg.RabbitMQURL.Reveal(), webhookSvc, logger)
+
 	pub, err := outbox.NewRabbitPublisher(cfg.RabbitMQURL.Reveal())
 	if err != nil {
 		return err
@@ -76,7 +91,7 @@ func run() error {
 	relay := outbox.NewRelay(pool, pub, logger, batch)
 
 	logger.Info("worker started", "poll_interval", cfg.PollInterval, "providers", reg.Names())
-	w := worker{svc: svc, relay: relay, metrics: metrics, log: logger}
+	w := worker{svc: svc, webhooks: webhookSvc, relay: relay, metrics: metrics, log: logger}
 	ticker := time.NewTicker(cfg.PollInterval)
 	defer ticker.Stop()
 	lastPrune := time.Time{}
@@ -100,10 +115,11 @@ func run() error {
 }
 
 type worker struct {
-	svc     *payments.Service
-	relay   *outbox.Relay
-	metrics *observability.Metrics
-	log     *slog.Logger
+	svc      *payments.Service
+	webhooks *webhooks.Service
+	relay    *outbox.Relay
+	metrics  *observability.Metrics
+	log      *slog.Logger
 }
 
 // tick runs one round of every task. Each task drains up to a bounded
@@ -126,6 +142,19 @@ func (w worker) tick(ctx context.Context) {
 		n, err := w.relay.RunOnce(ctx)
 		if err != nil {
 			w.log.Error("outbox relay", "err", err)
+			break
+		}
+		if n < batch {
+			break
+		}
+	}
+	if _, err := w.webhooks.SweepUnfanned(ctx, batch); err != nil {
+		w.log.Error("webhook sweep", "err", err)
+	}
+	for i := 0; i < 10; i++ {
+		n, err := w.webhooks.DeliverDue(ctx, batch)
+		if err != nil {
+			w.log.Error("webhook delivery", "err", err)
 			break
 		}
 		if n < batch {

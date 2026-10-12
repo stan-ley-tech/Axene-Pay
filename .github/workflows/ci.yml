@@ -78,8 +78,10 @@ jobs:
           go-version-file: go.mod
       - name: Integration tests (race detector)
         run: make test-integration
-      - name: RabbitMQ publisher tests
-        run: go test -race -count=1 -tags=rabbitmq ./internal/outbox
+      - name: RabbitMQ publisher and consumer tests
+        run: |
+          go test -race -count=1 -tags=rabbitmq ./internal/outbox
+          go test -race -count=1 -tags=integration,rabbitmq -run TestConsumer ./internal/webhooks
 
   generated:
     name: Generated code is current
