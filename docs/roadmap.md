@@ -10,7 +10,7 @@ Status values: ✅ done · 🟡 in progress · ⬜ not started.
 | Repository inspected; environment gaps recorded | ✅ |
 | Architecture, domain boundaries, ADRs, lifecycle, ledger, provider, security, threat model documented | ✅ |
 | Open decisions listed with blocking/deferrable split | ✅ |
-| Local dependencies defined (PostgreSQL, Redis, RabbitMQ via docker compose) | ⬜ |
+| Local dependencies defined (PostgreSQL, Redis, RabbitMQ via docker compose) | ✅ |
 | Go module builds; `api` serves `/healthz` and `/readyz` with validated config, structured logging, correlation IDs | ⬜ |
 | Money type with exhaustive unit tests | ⬜ |
 | OpenAPI skeleton with error envelope and conventions | ⬜ |
