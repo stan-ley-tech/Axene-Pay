@@ -1,0 +1,7 @@
+extends:
+  - recommended
+rules:
+  # Licensing of the API/product is an open business decision; not stated yet.
+  info-license: off
+  # The only server entry is the local development URL, by design.
+  no-server-example.com: off

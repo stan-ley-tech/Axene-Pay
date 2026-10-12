@@ -1,0 +1,153 @@
+openapi: 3.1.0
+info:
+  title: Axene Payments API
+  version: 0.0.1
+  summary: Unified payment API for Axene merchants.
+  description: |
+    **Status: Phase 0.** Only operational endpoints exist. Payment resources
+    are added to this contract in the same change that implements them;
+    nothing here describes behaviour that is not implemented.
+
+    ## Conventions (apply to every endpoint)
+
+    - **Authentication**: `Authorization: Bearer <secret API key>`. Keys are
+      bound to one merchant and one environment (`sk_test_…` sandbox,
+      `sk_live_…` live). Operational endpoints are unauthenticated.
+    - **Correlation**: every response carries `X-Request-Id`. Clients may send
+      their own (1–128 chars of `A–Z a–z 0–9 - _ .`); otherwise one is
+      generated. Quote it when contacting support.
+    - **Idempotency**: every `POST` that can create a financial effect requires
+      an `Idempotency-Key` header. See the `IdempotencyKey` parameter.
+    - **Money**: `amount` is an integer in the currency's minor unit
+      (KES 10.50 → `1050`) with an ISO 4217 `currency`. Never a float.
+    - **Timestamps**: RFC 3339, UTC.
+    - **IDs**: opaque prefixed strings (`pay_…`). Do not parse them.
+    - **Pagination**: cursor-based with `limit` (1–100, default 20) and
+      `starting_after`.
+    - **Errors**: always the `Error` envelope below; branch on `type` and
+      `code`, not on `message`.
+    - **Compatibility**: within `/v1` changes are additive only. New response
+      fields and new enum values may appear; clients must ignore unknown
+      fields and handle unknown enum values.
+security:
+  - apiKey: []
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      description: Reports that the process is running. Does not check dependencies.
+      tags: [Operations]
+      security: []
+      responses:
+        "200":
+          description: Process is alive.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+              example: { status: ok }
+
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Readiness probe
+      description: Reports whether the instance can serve traffic (PostgreSQL reachable within 2 seconds).
+      tags: [Operations]
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+              example: { status: ready }
+        "503":
+          $ref: "#/components/responses/NotReady"
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: Secret API key. Not yet enforced by any implemented endpoint.
+
+  headers:
+    RequestId:
+      description: Correlation identifier for this request.
+      schema: { type: string, maxLength: 128 }
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Unique key for this operation, scoped to the merchant and environment.
+        Replaying a completed request with the same key and identical body
+        returns the original response with `Idempotent-Replayed: true`.
+        Reusing a key with a different body returns `422 idempotency_key_reused`.
+        A request still in progress returns `409 idempotency_in_progress`.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, ready] }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, code, message, request_id]
+          properties:
+            type:
+              type: string
+              description: Broad error category.
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - permission_error
+                - not_found_error
+                - conflict_error
+                - rate_limit_error
+                - api_error
+            code:
+              type: string
+              description: Machine-readable error code, stable within a major version.
+            message:
+              type: string
+              description: Human-readable explanation. May change; do not parse.
+            param:
+              type: string
+              description: The request field the error relates to, if any.
+            request_id:
+              type: string
+              description: Matches the X-Request-Id response header.
+
+  responses:
+    NotReady:
+      description: A required dependency is unavailable.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: api_error, code: not_ready, message: Service is not ready., request_id: req_0123456789abcdef0123456789abcdef }
+
+tags:
+  - name: Operations
+    description: Health and readiness probes for orchestration platforms.
