@@ -80,6 +80,7 @@ Invariants enforced by `internal/payments` and tested exhaustively:
 | `CONFIRMED_SUCCESS` | Verified success |
 | `CONFIRMED_FAILURE` | Verified failure |
 | `UNRESOLVED` | Verification exhausted or contradictory |
+| `ABANDONED` | Never sent: the payment was cancelled before submission |
 
 Each attempt also stores: the routing decision and reason, the provider's
 request/response references (e.g. checkout request ID), the outcome claimed

@@ -13,12 +13,15 @@ const (
 	AttemptConfirmedSuccess  AttemptStatus = "CONFIRMED_SUCCESS"
 	AttemptConfirmedFailure  AttemptStatus = "CONFIRMED_FAILURE"
 	AttemptUnresolved        AttemptStatus = "UNRESOLVED"
+	// AttemptAbandoned: never sent to the provider because the payment was
+	// cancelled first.
+	AttemptAbandoned AttemptStatus = "ABANDONED"
 )
 
 // AllAttemptStatuses lists every attempt status.
 var AllAttemptStatuses = []AttemptStatus{
 	AttemptPendingSubmission, AttemptSubmitted, AttemptSubmissionUnknown, AttemptRejected,
-	AttemptConfirmedSuccess, AttemptConfirmedFailure, AttemptUnresolved,
+	AttemptConfirmedSuccess, AttemptConfirmedFailure, AttemptUnresolved, AttemptAbandoned,
 }
 
 // Valid reports whether s is a known attempt status.
@@ -42,7 +45,7 @@ func (s AttemptStatus) IsOpen() bool {
 }
 
 var attemptTransitions = map[AttemptStatus][]AttemptStatus{
-	AttemptPendingSubmission: {AttemptSubmitted, AttemptSubmissionUnknown, AttemptRejected},
+	AttemptPendingSubmission: {AttemptSubmitted, AttemptSubmissionUnknown, AttemptRejected, AttemptAbandoned},
 	// A status query can reveal that an in-doubt submission was received.
 	AttemptSubmissionUnknown: {AttemptSubmitted, AttemptConfirmedSuccess, AttemptConfirmedFailure, AttemptUnresolved},
 	AttemptSubmitted:         {AttemptConfirmedSuccess, AttemptConfirmedFailure, AttemptUnresolved},
