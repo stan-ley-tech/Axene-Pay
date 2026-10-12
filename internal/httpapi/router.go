@@ -28,6 +28,8 @@ type Deps struct {
 	Auth          Authenticator
 	Payments      *payments.Service
 	CallbackToken string
+	// HTTPMetrics, when set, records request metrics by route pattern.
+	HTTPMetrics func(http.Handler) http.Handler
 }
 
 // readinessTimeout bounds how long /readyz waits on dependencies so that a
@@ -47,6 +49,9 @@ func NewRouter(d Deps) http.Handler {
 		httpx.Recoverer(d.Logger),
 		limitBody,
 	)
+	if d.HTTPMetrics != nil {
+		r.Use(d.HTTPMetrics)
+	}
 	r.NotFound(httpx.NotFound)
 	r.MethodNotAllowed(httpx.MethodNotAllowed)
 

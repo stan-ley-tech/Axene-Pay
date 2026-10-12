@@ -19,6 +19,7 @@ import (
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/config"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/db"
+	"github.com/stan-ley-tech/axene-pay/internal/platform/observability"
 	"github.com/stan-ley-tech/axene-pay/internal/providers"
 	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
 )
@@ -58,8 +59,10 @@ func run() error {
 	}
 	policy := payments.DefaultPolicy()
 	policy.ProviderTimeout = cfg.ProviderTimeout
+	metrics := observability.New()
+	observability.Serve(ctx, cfg.MetricsAddr, metrics, logger)
 	svc, err := payments.NewService(payments.Deps{
-		Pool: pool, Providers: reg, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger,
+		Pool: pool, Providers: reg, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger, Metrics: metrics,
 	})
 	if err != nil {
 		return err
@@ -73,7 +76,7 @@ func run() error {
 	relay := outbox.NewRelay(pool, pub, logger, batch)
 
 	logger.Info("worker started", "poll_interval", cfg.PollInterval, "providers", reg.Names())
-	w := worker{svc: svc, relay: relay, log: logger}
+	w := worker{svc: svc, relay: relay, metrics: metrics, log: logger}
 	ticker := time.NewTicker(cfg.PollInterval)
 	defer ticker.Stop()
 	lastPrune := time.Time{}
@@ -97,9 +100,10 @@ func run() error {
 }
 
 type worker struct {
-	svc   *payments.Service
-	relay *outbox.Relay
-	log   *slog.Logger
+	svc     *payments.Service
+	relay   *outbox.Relay
+	metrics *observability.Metrics
+	log     *slog.Logger
 }
 
 // tick runs one round of every task. Each task drains up to a bounded
@@ -127,5 +131,10 @@ func (w worker) tick(ctx context.Context) {
 		if n < batch {
 			break
 		}
+	}
+	if n, age, err := w.relay.Backlog(ctx); err == nil {
+		w.metrics.SetOutboxBacklog(n, age)
+	} else {
+		w.log.Error("outbox backlog", "err", err)
 	}
 }

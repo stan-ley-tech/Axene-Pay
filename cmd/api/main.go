@@ -16,6 +16,7 @@ import (
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/config"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/db"
+	"github.com/stan-ley-tech/axene-pay/internal/platform/observability"
 	"github.com/stan-ley-tech/axene-pay/internal/providers"
 	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
 )
@@ -59,8 +60,10 @@ func run() error {
 	}
 	policy := payments.DefaultPolicy()
 	policy.ProviderTimeout = cfg.ProviderTimeout
+	metrics := observability.New()
+	observability.Serve(ctx, cfg.MetricsAddr, metrics, logger)
 	paymentSvc, err := payments.NewService(payments.Deps{
-		Pool: pool, Providers: registry, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger,
+		Pool: pool, Providers: registry, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger, Metrics: metrics,
 	})
 	if err != nil {
 		return err
@@ -71,6 +74,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Logger: logger, DB: pool, Auth: merchants, Payments: paymentSvc, CallbackToken: cfg.CallbackToken.Reveal(),
+			HTTPMetrics: metrics.HTTPMiddleware,
 		}),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
