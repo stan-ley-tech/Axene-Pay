@@ -26,6 +26,7 @@ import (
 	"github.com/stan-ley-tech/axene-pay/internal/platform/testdb"
 	"github.com/stan-ley-tech/axene-pay/internal/providers"
 	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
+	"github.com/stan-ley-tech/axene-pay/internal/webhooks"
 )
 
 const (
@@ -84,6 +85,15 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 
+	sealer, err := webhooks.NewSealer(bytes.Repeat([]byte{9}, 32), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wh, err := webhooks.NewService(webhooks.Deps{Pool: pool, Sealer: sealer, Payments: ps, Policy: webhooks.DefaultPolicy(), Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromFile("../../api-spec/openapi.yaml")
 	if err != nil {
@@ -98,7 +108,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{
 		t: t, router: router, logs: logs, ms: ms,
-		handler: httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, Auth: ms, Payments: ps, CallbackToken: callbackToken}),
+		handler: httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, Auth: ms, Payments: ps, CallbackToken: callbackToken, Webhooks: wh}),
 	}
 	h.key = h.merchantKey("testprovider")
 	return h
@@ -308,6 +318,55 @@ func TestContractAndBehaviour(t *testing.T) {
 		}
 	})
 
+	var webhookSecret string
+	t.Run("webhook endpoints", func(t *testing.T) {
+		r := h.do("POST", "/v1/webhook_endpoints", h.key, nil, `{"url":"https://merchant.example/hooks","event_types":["payment.succeeded"],"description":"prod"}`, true)
+		if r.status != 201 {
+			t.Fatalf("create: %d %s", r.status, r.body)
+		}
+		ep := r.json(t)
+		webhookSecret, _ = ep["secret"].(string)
+		id := ep["id"].(string)
+		if !strings.HasPrefix(webhookSecret, "whsec_") {
+			t.Fatalf("no secret in create response: %s", r.body)
+		}
+		list := h.do("GET", "/v1/webhook_endpoints", h.key, nil, "", true)
+		if list.status != 200 || strings.Contains(string(list.body), "whsec_") {
+			t.Fatalf("list: %d %s", list.status, list.body)
+		}
+		if g := h.do("GET", "/v1/webhook_endpoints/"+id, h.key, nil, "", true); g.status != 200 || strings.Contains(string(g.body), "whsec_") {
+			t.Fatalf("get: %d %s", g.status, g.body)
+		}
+		if d := h.do("GET", "/v1/webhook_endpoints/"+id+"/deliveries?limit=5", h.key, nil, "", true); d.status != 200 {
+			t.Fatalf("deliveries: %d %s", d.status, d.body)
+		}
+		if d := h.do("GET", "/v1/webhook_endpoints/"+id+"/deliveries?limit=500", h.key, nil, "", false); d.status != 400 {
+			t.Fatalf("bad limit: %d", d.status)
+		}
+		otherKey := h.merchantKey("testprovider")
+		if g := h.do("GET", "/v1/webhook_endpoints/"+id, otherKey, nil, "", true); g.status != 404 || g.errorCode(t) != "resource_not_found" {
+			t.Fatalf("other merchant: %d %s", g.status, g.body)
+		}
+		if dis := h.do("POST", "/v1/webhook_endpoints/"+id+"/disable", h.key, nil, "", true); dis.status != 200 || dis.json(t)["status"] != "disabled" {
+			t.Fatalf("disable: %d %s", dis.status, dis.body)
+		}
+		for _, bad := range []string{
+			`{"url":"https://127.0.0.1/hooks"}`,
+			`{"url":"not a url"}`,
+			`{"url":"https://merchant.example/h","event_types":["payment.exploded"]}`,
+		} {
+			if b := h.do("POST", "/v1/webhook_endpoints", h.key, nil, bad, false); b.status != 400 {
+				t.Errorf("%s: %d %s", bad, b.status, b.body)
+			}
+		}
+		if g := h.do("GET", "/v1/webhook_deliveries/whd_00000000000000000000000000", h.key, nil, "", true); g.status != 404 {
+			t.Fatalf("unknown delivery: %d", g.status)
+		}
+		if g := h.do("POST", "/v1/webhook_deliveries/whd_00000000000000000000000000/replay", h.key, nil, "", true); g.status != 404 {
+			t.Fatalf("replay unknown: %d", g.status)
+		}
+	})
+
 	t.Run("unknown route and method", func(t *testing.T) {
 		if r := h.do("GET", "/v1/nothing", h.key, nil, "", false); r.status != 404 || r.errorCode(t) != "route_not_found" {
 			t.Fatalf("unknown route: %d %s", r.status, r.body)
@@ -325,6 +384,7 @@ func TestContractAndBehaviour(t *testing.T) {
 			"callback token":  callbackToken,
 			"phone number":    "254700000000",
 			"callback secret": callbackSecret,
+			"webhook secret":  webhookSecret,
 		} {
 			if strings.Contains(logs, canary) {
 				t.Errorf("%s appears in logs", name)

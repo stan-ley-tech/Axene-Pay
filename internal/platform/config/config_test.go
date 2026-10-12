@@ -14,12 +14,13 @@ func env(m map[string]string) func(string) string {
 
 func validDev() map[string]string {
 	return map[string]string{
-		"APP_ENV":         "development",
-		"DATABASE_URL":    "postgres://u:p@localhost:5432/axene?sslmode=disable",
-		"API_KEY_PEPPER":  strings.Repeat("p", 32),
-		"PUBLIC_BASE_URL": "http://localhost:8080/",
-		"CALLBACK_TOKEN":  strings.Repeat("t", 32),
-		"RABBITMQ_URL":    "amqp://u:p@localhost:5672/",
+		"APP_ENV":             "development",
+		"DATABASE_URL":        "postgres://u:p@localhost:5432/axene?sslmode=disable",
+		"API_KEY_PEPPER":      strings.Repeat("p", 32),
+		"PUBLIC_BASE_URL":     "http://localhost:8080/",
+		"CALLBACK_TOKEN":      strings.Repeat("t", 32),
+		"RABBITMQ_URL":        "amqp://u:p@localhost:5672/",
+		"WEBHOOK_SECRETS_KEY": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
 	}
 }
 
@@ -52,6 +53,9 @@ func TestLoadAPIDefaults(t *testing.T) {
 	if cfg.HTTPAddr != ":8080" || cfg.LogLevel != slog.LevelInfo || cfg.MetricsAddr != ":9090" ||
 		cfg.ReadTimeout != 10*time.Second || cfg.ProviderTimeout != 30*time.Second || cfg.TestProviderEnabled {
 		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	if len(cfg.WebhookSecretsKey.Reveal()) != 32 || cfg.WebhookAllowPrivateTargets {
+		t.Fatalf("webhook config: %d bytes, private=%v", len(cfg.WebhookSecretsKey.Reveal()), cfg.WebhookAllowPrivateTargets)
 	}
 	if got := cfg.CallbackURL("testprovider"); got != "http://localhost:8080/callbacks/testprovider/"+strings.Repeat("t", 32) {
 		t.Fatalf("CallbackURL = %q", got)
@@ -107,6 +111,10 @@ func TestLoadAPIRejects(t *testing.T) {
 		"testprovider no secret": with(validDev(), "TESTPROVIDER_ENABLED", "true"),
 		"bad bool":               with(validDev(), "TESTPROVIDER_ENABLED", "yes"),
 		"write <= provider":      with(validDev(), "HTTP_WRITE_TIMEOUT", "30s", "PROVIDER_TIMEOUT", "30s"),
+		"no webhook key":         with(validDev(), "WEBHOOK_SECRETS_KEY", ""),
+		"short webhook key":      with(validDev(), "WEBHOOK_SECRETS_KEY", "c2hvcnQ="),
+		"webhook key not b64":    with(validDev(), "WEBHOOK_SECRETS_KEY", "!!!"),
+		"private targets prod":   with(validProd(), "WEBHOOK_ALLOW_PRIVATE_TARGETS", "true"),
 	}
 	for name, m := range cases {
 		if _, err := LoadAPI(env(m)); err == nil {

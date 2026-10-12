@@ -12,6 +12,7 @@ import (
 
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/httpx"
+	"github.com/stan-ley-tech/axene-pay/internal/webhooks"
 )
 
 // Pinger is satisfied by *pgxpool.Pool.
@@ -28,6 +29,8 @@ type Deps struct {
 	Auth          Authenticator
 	Payments      *payments.Service
 	CallbackToken string
+	// Webhooks, when set, mounts webhook endpoint management.
+	Webhooks *webhooks.Service
 	// HTTPMetrics, when set, records request metrics by route pattern.
 	HTTPMetrics func(http.Handler) http.Handler
 }
@@ -65,6 +68,16 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/payments", ph.create)
 			r.Get("/payments/{paymentID}", ph.get)
 			r.Post("/payments/{paymentID}/cancel", ph.cancel)
+			if d.Webhooks != nil {
+				wh := webhookHandlers{svc: d.Webhooks, log: d.Logger}
+				r.Post("/webhook_endpoints", wh.createEndpoint)
+				r.Get("/webhook_endpoints", wh.listEndpoints)
+				r.Get("/webhook_endpoints/{endpointID}", wh.getEndpoint)
+				r.Post("/webhook_endpoints/{endpointID}/disable", wh.disableEndpoint)
+				r.Get("/webhook_endpoints/{endpointID}/deliveries", wh.listDeliveries)
+				r.Get("/webhook_deliveries/{deliveryID}", wh.getDelivery)
+				r.Post("/webhook_deliveries/{deliveryID}/replay", wh.replayDelivery)
+			}
 		})
 		r.Method(http.MethodPost, "/callbacks/{provider}/{token}", callbackHandler{svc: d.Payments, token: d.CallbackToken, log: d.Logger})
 	}

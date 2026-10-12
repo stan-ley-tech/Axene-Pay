@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -48,6 +49,13 @@ type Common struct {
 	// production.
 	TestProviderEnabled        bool
 	TestProviderCallbackSecret Secret
+
+	// WebhookSecretsKey is the 32-byte AES key that encrypts webhook signing
+	// secrets at rest (ADR-0010).
+	WebhookSecretsKey Secret
+	// WebhookAllowPrivateTargets lets webhooks reach loopback/private
+	// addresses. Development and test only.
+	WebhookAllowPrivateTargets bool
 }
 
 // API is the configuration of the api process.
@@ -126,6 +134,18 @@ func loadCommon(p *parser, defaultMetrics string) Common {
 		ProviderTimeout:            p.duration("PROVIDER_TIMEOUT", 30*time.Second),
 		TestProviderEnabled:        p.boolean("TESTPROVIDER_ENABLED"),
 		TestProviderCallbackSecret: Secret(p.lookup("TESTPROVIDER_CALLBACK_SECRET")),
+		WebhookAllowPrivateTargets: p.boolean("WEBHOOK_ALLOW_PRIVATE_TARGETS"),
+	}
+	if raw := p.required("WEBHOOK_SECRETS_KEY"); raw != "" {
+		key, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(key) != 32 {
+			p.fail("WEBHOOK_SECRETS_KEY: must be 32 bytes, base64-encoded")
+		} else {
+			c.WebhookSecretsKey = Secret(key)
+		}
+	}
+	if c.WebhookAllowPrivateTargets && c.Env != EnvDevelopment && c.Env != EnvTest {
+		p.fail("WEBHOOK_ALLOW_PRIVATE_TARGETS: only allowed in development and test")
 	}
 	if raw := c.DatabaseURL.Reveal(); raw != "" {
 		p.check(validateDatabaseURL(raw, c.Env))

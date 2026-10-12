@@ -37,6 +37,22 @@ info:
     payment with a new request** while one is pending. `UNRESOLVED` means
     Axene could not confirm the outcome automatically and is reconciling it
     with the provider; it can still become `SUCCEEDED` or `FAILED`.
+
+    ## Webhooks
+
+    Axene POSTs a JSON event to each subscribed endpoint:
+    `{"id":"evt_…","object":"event","type":"payment.succeeded","api_version":"v1","created_at":…,"data":{"payment":{…}}}`.
+    `data.payment` has the same shape as `GET /v1/payments/{payment_id}` and
+    reflects the payment when the event was dispatched.
+
+    - **Verify** every request: `Axene-Signature: t=<unix>,v1=<hex>` where
+      `v1 = HMAC-SHA256(secret, t + "." + raw_body)`. Compare in constant
+      time and reject timestamps more than 5 minutes old.
+    - **Deduplicate** by `Axene-Event-Id`: delivery is at least once.
+    - **Do not rely on order**; use the event type and payment status.
+    - Respond with any **2xx** within 10 seconds. Other responses, timeouts
+      and redirects are retried with exponential backoff for about 9 hours,
+      after which the delivery is `dead` and can be replayed.
 security:
   - apiKey: []
 
@@ -168,6 +184,168 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "500": { $ref: "#/components/responses/InternalError" }
 
+  /v1/webhook_endpoints:
+    post:
+      operationId: createWebhookEndpoint
+      summary: Create a webhook endpoint
+      description: |
+        Registers an HTTPS URL to receive signed payment events. The response
+        contains the signing `secret` **once**; store it securely to verify
+        the `Axene-Signature` header. An empty `event_types` subscribes to
+        every payment event.
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWebhookEndpointRequest" }
+            example: { url: "https://merchant.example/axene/webhooks", event_types: [payment.succeeded, payment.failed] }
+      responses:
+        "201":
+          description: Endpoint created; includes the signing secret.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    get:
+      operationId: listWebhookEndpoints
+      summary: List webhook endpoints
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Endpoints for this merchant and environment (secrets are never returned).
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data]
+                properties:
+                  object: { type: string, const: list }
+                  data: { type: array, items: { $ref: "#/components/schemas/WebhookEndpoint" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/webhook_endpoints/{endpoint_id}:
+    get:
+      operationId: getWebhookEndpoint
+      summary: Retrieve a webhook endpoint
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/EndpointId"
+      responses:
+        "200":
+          description: The endpoint.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/webhook_endpoints/{endpoint_id}/disable:
+    post:
+      operationId: disableWebhookEndpoint
+      summary: Disable a webhook endpoint
+      description: Stops deliveries. Pending deliveries to the endpoint are marked dead.
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/EndpointId"
+      responses:
+        "200":
+          description: The disabled endpoint.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookEndpoint" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/webhook_endpoints/{endpoint_id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      summary: List recent deliveries to an endpoint
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/EndpointId"
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Most recent deliveries first.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data]
+                properties:
+                  object: { type: string, const: list }
+                  data: { type: array, items: { $ref: "#/components/schemas/WebhookDelivery" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/webhook_deliveries/{delivery_id}:
+    get:
+      operationId: getWebhookDelivery
+      summary: Retrieve a delivery with every attempt
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/DeliveryId"
+      responses:
+        "200":
+          description: The delivery and its attempt history.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookDelivery" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/webhook_deliveries/{delivery_id}/replay:
+    post:
+      operationId: replayWebhookDelivery
+      summary: Replay a delivered or dead delivery
+      description: |
+        Schedules the same event body again with a fresh attempt budget and a
+        new signature. Returns `409 delivery_pending` while the delivery is
+        still being retried automatically.
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/DeliveryId"
+      responses:
+        "200":
+          description: The rescheduled delivery.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WebhookDelivery" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
   /callbacks/{provider}/{token}:
     post:
       operationId: receiveProviderCallback
@@ -233,6 +411,16 @@ components:
         returns `422 idempotency_key_reused`. A request still in progress
         returns `409 idempotency_in_progress`.
       schema: { type: string, minLength: 1, maxLength: 255, pattern: "^[!-~]+$" }
+    EndpointId:
+      name: endpoint_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^whe_[0-9A-HJKMNP-TV-Z]{26}$" }
+    DeliveryId:
+      name: delivery_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^whd_[0-9A-HJKMNP-TV-Z]{26}$" }
     PaymentId:
       name: payment_id
       in: path
@@ -328,6 +516,65 @@ components:
         submitted_at: { type: [string, "null"], format: date-time }
         resolved_at: { type: [string, "null"], format: date-time }
 
+    WebhookEventType:
+      type: string
+      enum: [payment.pending_provider, payment.pending_verification, payment.unresolved,
+             payment.succeeded, payment.failed, payment.cancelled, payment.reversed]
+
+    CreateWebhookEndpointRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, maxLength: 2048, description: HTTPS URL (http is accepted only in local development). }
+        event_types: { type: array, items: { $ref: "#/components/schemas/WebhookEventType" } }
+        description: { type: string, maxLength: 200 }
+
+    WebhookEndpoint:
+      type: object
+      required: [id, object, url, event_types, description, status, created_at]
+      properties:
+        id: { type: string, pattern: "^whe_" }
+        object: { type: string, const: webhook_endpoint }
+        url: { type: string }
+        event_types: { type: array, items: { $ref: "#/components/schemas/WebhookEventType" } }
+        description: { type: string }
+        status: { type: string, enum: [enabled, disabled] }
+        secret:
+          type: string
+          pattern: "^whsec_"
+          description: Signing secret. Present only in the response that creates the endpoint.
+        created_at: { type: string, format: date-time }
+
+    WebhookDelivery:
+      type: object
+      required: [id, object, endpoint_id, event_id, event_type, status, attempts, next_attempt_at,
+                 last_status_code, last_error, delivered_at, created_at]
+      properties:
+        id: { type: string, pattern: "^whd_" }
+        object: { type: string, const: webhook_delivery }
+        endpoint_id: { type: string, pattern: "^whe_" }
+        event_id: { type: string, pattern: "^evt_" }
+        event_type: { $ref: "#/components/schemas/WebhookEventType" }
+        status: { type: string, enum: [pending, delivered, dead] }
+        attempts: { type: integer }
+        next_attempt_at: { type: [string, "null"], format: date-time }
+        last_status_code: { type: [integer, "null"] }
+        last_error: { type: [string, "null"] }
+        delivered_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        attempt_history:
+          type: array
+          description: Every HTTP attempt, oldest first. Present when retrieving a single delivery.
+          items:
+            type: object
+            required: [attempted_at, status_code, error, duration_ms]
+            properties:
+              attempted_at: { type: string, format: date-time }
+              status_code: { type: [integer, "null"] }
+              error: { type: [string, "null"] }
+              duration_ms: { type: integer }
+
     Error:
       type: object
       required: [error]
@@ -356,7 +603,8 @@ components:
                 idempotency_key_reused, idempotency_in_progress,
                 no_eligible_provider, missing_api_key, invalid_api_key,
                 merchant_suspended, merchant_not_approved, payment_not_found,
-                payment_not_cancellable, route_not_found, method_not_allowed,
+                payment_not_cancellable, resource_not_found, delivery_pending,
+                route_not_found, method_not_allowed,
                 invalid_callback, not_ready, internal_error.
             message:
               type: string
@@ -433,5 +681,7 @@ tags:
     description: Health and readiness probes for orchestration platforms.
   - name: Payments
     description: Create and track customer payments.
+  - name: Webhooks
+    description: Signed notifications of payment events to merchant endpoints.
   - name: Provider callbacks
     description: Inbound notifications from payment providers.

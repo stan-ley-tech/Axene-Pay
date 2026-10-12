@@ -19,6 +19,7 @@ import (
 	"github.com/stan-ley-tech/axene-pay/internal/platform/observability"
 	"github.com/stan-ley-tech/axene-pay/internal/providers"
 	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
+	"github.com/stan-ley-tech/axene-pay/internal/webhooks"
 )
 
 func main() {
@@ -68,13 +69,24 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	sealer, err := webhooks.NewSealer([]byte(cfg.WebhookSecretsKey.Reveal()), 1)
+	if err != nil {
+		return err
+	}
+	webhookSvc, err := webhooks.NewService(webhooks.Deps{
+		Pool: pool, Sealer: sealer, Payments: paymentSvc, Policy: webhooks.DefaultPolicy(),
+		RequireHTTPS: cfg.Env.IsDeployed(), AllowPrivateTargets: cfg.WebhookAllowPrivateTargets, Logger: logger,
+	})
+	if err != nil {
+		return err
+	}
 	logger.Info("providers registered", "providers", registry.Names())
 
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Logger: logger, DB: pool, Auth: merchants, Payments: paymentSvc, CallbackToken: cfg.CallbackToken.Reveal(),
-			HTTPMetrics: metrics.HTTPMiddleware,
+			Webhooks: webhookSvc, HTTPMetrics: metrics.HTTPMiddleware,
 		}),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
