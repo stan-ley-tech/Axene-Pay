@@ -11,10 +11,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/stan-ley-tech/axene-pay/internal/httpapi"
+	"github.com/stan-ley-tech/axene-pay/internal/merchant"
+	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/config"
+	"github.com/stan-ley-tech/axene-pay/internal/platform/db"
+	"github.com/stan-ley-tech/axene-pay/internal/providers"
+	"github.com/stan-ley-tech/axene-pay/internal/providers/testprovider"
 )
 
 func main() {
@@ -38,17 +41,37 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// pgxpool connects lazily, so the API starts even if the database is
+	// The pool connects lazily, so the API starts even if the database is
 	// briefly unavailable; /readyz reports the real state.
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL.Reveal())
+	pool, err := db.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
-		return errors.New("create database pool: invalid DATABASE_URL")
+		return err
 	}
 	defer pool.Close()
 
+	registry, err := Registry(cfg.Common)
+	if err != nil {
+		return err
+	}
+	merchants, err := merchant.NewService(pool, []byte(cfg.APIKeyPepper.Reveal()))
+	if err != nil {
+		return err
+	}
+	policy := payments.DefaultPolicy()
+	policy.ProviderTimeout = cfg.ProviderTimeout
+	paymentSvc, err := payments.NewService(payments.Deps{
+		Pool: pool, Providers: registry, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger,
+	})
+	if err != nil {
+		return err
+	}
+	logger.Info("providers registered", "providers", registry.Names())
+
 	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool}),
+		Addr: cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Logger: logger, DB: pool, Auth: merchants, Payments: paymentSvc, CallbackToken: cfg.CallbackToken.Reveal(),
+		}),
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
@@ -70,9 +93,21 @@ func run() error {
 	logger.Info("shutting down", "timeout", cfg.ShutdownTimeout)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	logger.Info("shutdown complete")
 	return nil
+}
+
+// Registry builds the provider registry for this deployment. Real provider
+// adapters are added here as they are implemented (M-Pesa: Phase 2).
+func Registry(c config.Common) (*providers.Registry, error) {
+	reg := providers.NewRegistry(c.Env == config.EnvProduction)
+	if c.TestProviderEnabled {
+		if err := reg.Register(testprovider.New(c.TestProviderCallbackSecret.Reveal())); err != nil {
+			return nil, err
+		}
+	}
+	return reg, nil
 }

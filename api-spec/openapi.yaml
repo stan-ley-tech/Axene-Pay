@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: Axene Payments API
-  version: 0.0.1
+  version: 0.1.0
   summary: Unified payment API for Axene merchants.
   description: |
-    **Status: Phase 0.** Only operational endpoints exist. Payment resources
-    are added to this contract in the same change that implements them;
-    nothing here describes behaviour that is not implemented.
+    **Status: Phase 1.** Payments can be created, retrieved and cancelled.
+    The only provider available is a clearly labelled **simulated provider**
+    in development and sandbox deployments; no real payment rail is
+    connected. Nothing here describes behaviour that is not implemented.
 
     ## Conventions (apply to every endpoint)
 
@@ -19,16 +20,23 @@ info:
     - **Idempotency**: every `POST` that can create a financial effect requires
       an `Idempotency-Key` header. See the `IdempotencyKey` parameter.
     - **Money**: `amount` is an integer in the currency's minor unit
-      (KES 10.50 → `1050`) with an ISO 4217 `currency`. Never a float.
+      (KES 100.00 → `10000`) with an ISO 4217 `currency`. Never a float.
     - **Timestamps**: RFC 3339, UTC.
     - **IDs**: opaque prefixed strings (`pay_…`). Do not parse them.
-    - **Pagination**: cursor-based with `limit` (1–100, default 20) and
-      `starting_after`.
-    - **Errors**: always the `Error` envelope below; branch on `type` and
-      `code`, not on `message`.
+    - **Errors**: always the `Error` envelope; branch on `type` and `code`,
+      not on `message`.
     - **Compatibility**: within `/v1` changes are additive only. New response
       fields and new enum values may appear; clients must ignore unknown
       fields and handle unknown enum values.
+
+    ## Payment status
+
+    A payment is final only in `SUCCEEDED`, `FAILED`, `CANCELLED` or
+    `REVERSED`. `PENDING_PROVIDER` and `PENDING_VERIFICATION` mean the outcome
+    is not yet known; **do not treat them as failure and do not retry the
+    payment with a new request** while one is pending. `UNRESOLVED` means
+    Axene could not confirm the outcome automatically and is reconciling it
+    with the provider; it can still become `SUCCEEDED` or `FAILED`.
 security:
   - apiKey: []
 
@@ -73,17 +81,143 @@ paths:
         "503":
           $ref: "#/components/responses/NotReady"
 
+  /v1/payments:
+    post:
+      operationId: createPayment
+      summary: Create a payment
+      description: |
+        Creates a payment, routes it to a provider configured for the merchant,
+        and sends the provider request. The response normally shows
+        `PENDING_PROVIDER`: the customer has been prompted and the outcome is
+        not yet known. Poll `GET /v1/payments/{payment_id}` for the final
+        status.
+      tags: [Payments]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentRequest" }
+            example:
+              amount: 10000
+              currency: KES
+              payment_method: { type: mpesa, phone_number: "254712345678" }
+              description: Order 1042
+              merchant_reference: order-1042
+      responses:
+        "201":
+          description: Payment created (or recovered for a retried request).
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/payments/{payment_id}:
+    get:
+      operationId: getPayment
+      summary: Retrieve a payment
+      tags: [Payments]
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: The payment.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/payments/{payment_id}/cancel:
+    post:
+      operationId: cancelPayment
+      summary: Cancel a payment
+      description: |
+        Cancels a payment that has not yet been sent to a provider. Once a
+        provider request has been sent it cannot be withdrawn and this returns
+        `409 payment_not_cancellable`. Cancelling an already cancelled payment
+        returns it unchanged.
+      tags: [Payments]
+      parameters:
+        - $ref: "#/components/parameters/PaymentId"
+      responses:
+        "200":
+          description: The cancelled payment.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /callbacks/{provider}/{token}:
+    post:
+      operationId: receiveProviderCallback
+      summary: Provider callback (provider-facing)
+      description: |
+        Receives asynchronous result notifications from payment providers.
+        Not for merchants. The path token is a deployment secret. A callback
+        is stored and treated as an unverified claim: it can move a payment
+        to `PENDING_VERIFICATION` but never to a final status (ADR-0009).
+        The body format is provider-specific.
+      tags: [Provider callbacks]
+      security: []
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string } }
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: Callback durably stored.
+          headers:
+            X-Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received]
+                properties:
+                  received: { type: boolean, const: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
 components:
   securitySchemes:
     apiKey:
       type: http
       scheme: bearer
-      description: Secret API key. Not yet enforced by any implemented endpoint.
+      description: Secret API key (`sk_test_…` or `sk_live_…`).
 
   headers:
     RequestId:
       description: Correlation identifier for this request.
       schema: { type: string, maxLength: 128 }
+    IdempotentReplayed:
+      description: Present with value `true` when the response is a replay of an earlier request with the same Idempotency-Key.
+      schema: { type: string, enum: ["true"] }
 
   parameters:
     IdempotencyKey:
@@ -91,12 +225,19 @@ components:
       in: header
       required: true
       description: |
-        Unique key for this operation, scoped to the merchant and environment.
-        Replaying a completed request with the same key and identical body
-        returns the original response with `Idempotent-Replayed: true`.
-        Reusing a key with a different body returns `422 idempotency_key_reused`.
-        A request still in progress returns `409 idempotency_in_progress`.
-      schema: { type: string, minLength: 1, maxLength: 255 }
+        Unique key for this operation (1–255 printable ASCII characters, no
+        spaces), scoped to the merchant and environment and retained for at
+        least 24 hours. Replaying a completed request with the same key and
+        identical body returns the original response with
+        `Idempotent-Replayed: true`. Reusing a key with a different body
+        returns `422 idempotency_key_reused`. A request still in progress
+        returns `409 idempotency_in_progress`.
+      schema: { type: string, minLength: 1, maxLength: 255, pattern: "^[!-~]+$" }
+    PaymentId:
+      name: payment_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^pay_[0-9A-HJKMNP-TV-Z]{26}$" }
 
   schemas:
     HealthStatus:
@@ -104,6 +245,88 @@ components:
       required: [status]
       properties:
         status: { type: string, enum: [ok, ready] }
+
+    CreatePaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, payment_method]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Amount in the currency's minor unit. M-Pesa accepts whole shillings only (multiples of 100 for KES).
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: ISO 4217 code. The simulated provider accepts KES.
+        payment_method:
+          type: object
+          additionalProperties: false
+          required: [type, phone_number]
+          properties:
+            type: { type: string, enum: [mpesa] }
+            phone_number:
+              type: string
+              pattern: "^254[17][0-9]{8}$"
+              description: Payer's MSISDN in international format without '+'.
+        description: { type: string, maxLength: 200 }
+        merchant_reference:
+          type: string
+          maxLength: 200
+          description: Your own reference, e.g. an order ID.
+
+    Payment:
+      type: object
+      required: [id, object, environment, status, status_reason, amount, currency, payment_method,
+                 description, merchant_reference, settlement_destination, attempts, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^pay_" }
+        object: { type: string, const: payment }
+        environment: { type: string, enum: [sandbox, live] }
+        status:
+          type: string
+          enum: [CREATED, PENDING_PROVIDER, PENDING_VERIFICATION, UNRESOLVED, SUCCEEDED, FAILED, CANCELLED, REVERSED]
+        status_reason:
+          type: [string, "null"]
+          description: Human-readable explanation of the latest status change. Do not parse.
+        amount: { type: integer, format: int64 }
+        currency: { type: string }
+        payment_method:
+          type: object
+          required: [type, phone_number]
+          properties:
+            type: { type: string, enum: [mpesa] }
+            phone_number: { type: string, description: Masked MSISDN. }
+        description: { type: string }
+        merchant_reference: { type: [string, "null"] }
+        settlement_destination:
+          type: object
+          description: Where the provider settles the funds. Axene does not hold merchant funds.
+          required: [id, type, identifier]
+          properties:
+            id: { type: string, pattern: "^dst_" }
+            type: { type: string, enum: [mpesa_paybill, mpesa_till] }
+            identifier: { type: string }
+        attempts:
+          type: array
+          items: { $ref: "#/components/schemas/PaymentAttempt" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PaymentAttempt:
+      type: object
+      required: [id, provider, status, created_at, submitted_at, resolved_at]
+      properties:
+        id: { type: string, pattern: "^att_" }
+        provider: { type: string }
+        status:
+          type: string
+          enum: [PENDING_SUBMISSION, SUBMITTED, SUBMISSION_UNKNOWN, REJECTED, CONFIRMED_SUCCESS,
+                 CONFIRMED_FAILURE, UNRESOLVED, ABANDONED]
+        created_at: { type: string, format: date-time }
+        submitted_at: { type: [string, "null"], format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
 
     Error:
       type: object
@@ -126,7 +349,15 @@ components:
                 - api_error
             code:
               type: string
-              description: Machine-readable error code, stable within a major version.
+              description: |
+                Machine-readable error code, stable within a major version.
+                Current codes: invalid_json, parameter_invalid, body_too_large,
+                idempotency_key_required, idempotency_key_invalid,
+                idempotency_key_reused, idempotency_in_progress,
+                no_eligible_provider, missing_api_key, invalid_api_key,
+                merchant_suspended, merchant_not_approved, payment_not_found,
+                payment_not_cancellable, route_not_found, method_not_allowed,
+                invalid_callback, not_ready, internal_error.
             message:
               type: string
               description: Human-readable explanation. May change; do not parse.
@@ -138,6 +369,55 @@ components:
               description: Matches the X-Request-Id response header.
 
   responses:
+    BadRequest:
+      description: The request is malformed or a parameter is invalid.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing, invalid or revoked API key.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The merchant may not perform this request (suspended, or not approved for live).
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such resource for this merchant and environment.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The request conflicts with the resource's state or an in-flight identical request.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: The request is valid JSON but cannot be processed (idempotency key reuse, no eligible provider).
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InternalError:
+      description: Unexpected server error. Safe to retry with the same Idempotency-Key.
+      headers:
+        X-Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     NotReady:
       description: A required dependency is unavailable.
       headers:
@@ -151,3 +431,7 @@ components:
 tags:
   - name: Operations
     description: Health and readiness probes for orchestration platforms.
+  - name: Payments
+    description: Create and track customer payments.
+  - name: Provider callbacks
+    description: Inbound notifications from payment providers.

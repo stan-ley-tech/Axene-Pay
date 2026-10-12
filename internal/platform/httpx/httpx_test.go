@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func discard() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -75,20 +77,20 @@ func TestRecovererWritesEnvelope(t *testing.T) {
 	}
 }
 
-func TestAccessLogOmitsQueryString(t *testing.T) {
+func TestAccessLogLogsRoutePatternNotRawPath(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	h := AccessLog(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusTeapot)
-	}))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/x?api_key=sk_live_secret", nil))
+	r := chi.NewRouter()
+	r.Use(AccessLog(logger))
+	r.Get("/callbacks/{token}", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/callbacks/s3cr3t-token?api_key=sk_live_secret", nil))
 
 	out := buf.String()
-	if strings.Contains(out, "sk_live_secret") {
-		t.Fatalf("query string logged: %s", out)
+	if strings.Contains(out, "sk_live_secret") || strings.Contains(out, "s3cr3t-token") {
+		t.Fatalf("secret logged: %s", out)
 	}
-	if !strings.Contains(out, `"status":418`) || !strings.Contains(out, `"path":"/x"`) {
+	if !strings.Contains(out, `"status":418`) || !strings.Contains(out, `"route":"/callbacks/{token}"`) {
 		t.Fatalf("unexpected log: %s", out)
 	}
 }

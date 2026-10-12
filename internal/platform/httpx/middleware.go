@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // RequestIDHeader carries the correlation ID on requests and responses.
@@ -87,9 +89,9 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// AccessLog logs one structured line per request. It deliberately logs the
-// route path only — never query strings, headers, or bodies, which may hold
-// credentials or personal data.
+// AccessLog logs one structured line per request. It logs the matched route
+// pattern (e.g. /v1/payments/{paymentID}), never the raw path, query string,
+// headers, or body: raw paths can carry secrets such as callback tokens.
 func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,12 +105,22 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.LogAttrs(r.Context(), level, "http request",
 				slog.String("request_id", RequestID(r.Context())),
 				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("route", routePattern(r)),
 				slog.Int("status", rec.status),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
 	}
+}
+
+// routePattern returns the chi route pattern matched for r, or "unmatched".
+func routePattern(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if p := rc.RoutePattern(); p != "" {
+			return p
+		}
+	}
+	return "unmatched"
 }
 
 // Recoverer converts a handler panic into a 500 with the standard envelope

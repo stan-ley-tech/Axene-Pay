@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/httpx"
 )
 
@@ -18,10 +19,15 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// Deps are the dependencies the router needs.
+// Deps are the dependencies the router needs. Payments, Auth and
+// CallbackToken are optional so that probes can be tested alone; when
+// Payments is nil the payment and callback routes are not mounted.
 type Deps struct {
-	Logger *slog.Logger
-	DB     Pinger
+	Logger        *slog.Logger
+	DB            Pinger
+	Auth          Authenticator
+	Payments      *payments.Service
+	CallbackToken string
 }
 
 // readinessTimeout bounds how long /readyz waits on dependencies so that a
@@ -46,6 +52,17 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", readyz(d.DB, d.Logger))
+
+	if d.Payments != nil {
+		ph := paymentHandlers{svc: d.Payments, log: d.Logger}
+		r.Route("/v1", func(r chi.Router) {
+			r.Use(requireAPIKey(d.Auth, d.Logger))
+			r.Post("/payments", ph.create)
+			r.Get("/payments/{paymentID}", ph.get)
+			r.Post("/payments/{paymentID}/cancel", ph.cancel)
+		})
+		r.Method(http.MethodPost, "/callbacks/{provider}/{token}", callbackHandler{svc: d.Payments, token: d.CallbackToken, log: d.Logger})
+	}
 	return r
 }
 
