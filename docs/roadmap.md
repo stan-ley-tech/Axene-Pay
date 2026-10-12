@@ -69,19 +69,35 @@ Acceptance criteria (all verified locally against PostgreSQL and in CI; see
 13. ✅ Admin CLI creates merchants, settlement destinations, provider
     configurations, and API keys (key printed once).
 
-## Phase 2 — M-Pesa Express sandbox integration ⬜
+## Phase 2 — Notifications and M-Pesa Express sandbox 🟡
+
+### 2a. Merchant webhooks (no external dependency) 🟡
+
+Design: [ADR-0010](adr/0010-merchant-webhooks.md).
+
+1. ⬜ Merchants manage webhook endpoints by API; signing secrets are shown
+   once and stored encrypted.
+2. ⬜ Every payment event is fanned out exactly once per subscribed endpoint,
+   via RabbitMQ and a database sweep that covers lost messages.
+3. ⬜ Deliveries are signed (timestamped HMAC), retried with exponential
+   backoff, marked dead after the maximum attempts, and replayable.
+4. ⬜ Delivery history (every attempt) is visible to the merchant by API.
+5. ⬜ The delivery client refuses private, loopback, link-local and metadata
+   addresses and follows no redirects.
+
+### 2b. M-Pesa Express adapter ⬜ (blocked)
 
 Prerequisites: external dependencies X-01…X-06 ([decisions.md](decisions.md))
-and `docs/providers/mpesa.md` verified against official documentation.
+and the official Daraja definitions confirmed (see
+[mpesa.md](providers/mpesa.md) §0).
 
 1. M-Pesa adapter: OAuth token caching, STK Push submit, callback parsing,
    STK Query verification, result-code mapping from official docs.
 2. Provider request/response and correlation identifiers persisted.
 3. Environment-specific configuration (local fake, sandbox, production);
    credentials only from the secret store.
-4. Merchant webhooks signed, retried with backoff, dead-lettered, visible.
-5. Tests against recorded sandbox fixtures plus an opt-in live sandbox job.
-6. Not production-ready until tested against the real Daraja environment.
+4. Tests against recorded sandbox fixtures plus an opt-in live sandbox job.
+5. Not production-ready until tested against the real Daraja environment.
 
 ## Phase 3 — Financial foundation ⬜
 

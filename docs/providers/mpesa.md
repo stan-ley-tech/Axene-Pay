@@ -11,6 +11,29 @@ ambiguities. External dependencies are tracked as X-01…X-08 in
 The M-Pesa integration is **not production-ready** and must not be described
 as such until it has been tested against the actual Daraja environment.
 
+## 0. Verification status (2026-10-12)
+
+The official portal could not be read from the build environment
+(`developer.safaricom.co.ke` returned HTTP 408 to both automated fetches and
+`curl`), and documentation mirrors did not render their content. Community
+guides consistently describe the following, which therefore remains
+**unverified** and must be confirmed from the official portal before the
+adapter is written:
+
+- Sandbox base URL `https://sandbox.safaricom.co.ke`, production
+  `https://api.safaricom.co.ke`.
+- OAuth token from consumer key/secret via HTTP Basic authentication.
+- STK Push at `/mpesa/stkpush/v1/processrequest`; STK Push Query at
+  `/mpesa/stkpushquery/v1/query` taking `BusinessShortCode`, `Password`,
+  `Timestamp`, `CheckoutRequestID`.
+- `ResultCode` 0 = success; 1032 = cancelled by the user.
+
+**Decision:** no M-Pesa wire format is implemented until a person with access
+to Axene's Daraja account confirms the official request/response/callback
+definitions and result-code list (and obtains sandbox credentials, X-02).
+The adapter will then be built against the existing provider contract; no
+payment, ledger, or API code needs to change.
+
 ## 1. Scope of the first integration
 
 | Need | Daraja API (to verify) | Status |
