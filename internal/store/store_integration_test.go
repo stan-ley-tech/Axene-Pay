@@ -51,7 +51,7 @@ func newWorld(t *testing.T) world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := q.InsertAttempt(ctx, store.InsertAttemptParams{PublicID: ids.New(ids.Attempt), PaymentID: p.ID, Provider: "testprovider", RoutingReason: "test"})
+	a, err := q.InsertAttempt(ctx, store.InsertAttemptParams{PublicID: ids.New(ids.Attempt), PaymentID: p.ID, Provider: "testprovider", RoutingReason: "test", CreatedAt: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestIdempotencyKeyHasExactlyOneOwner(t *testing.T) {
 	w := newWorld(t)
 	params := store.InsertIdempotencyKeyParams{
 		MerchantID: w.merchant.ID, Environment: "sandbox", Key: "k1", RequestMethod: "POST",
-		RequestPath: "/v1/payments", RequestFingerprint: make([]byte, 32), ExpiresAt: time.Now().Add(time.Hour),
+		RequestPath: "/v1/payments", RequestFingerprint: make([]byte, 32), CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
 	}
 	const n = 8
 	results := make(chan int64, n)

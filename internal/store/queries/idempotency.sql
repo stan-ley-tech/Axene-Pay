@@ -7,9 +7,9 @@ WHERE merchant_id = sqlc.arg(merchant_id) AND environment = sqlc.arg(environment
 -- A concurrent insert of the same key waits for the first transaction and
 -- then inserts nothing, so exactly one request owns the key.
 INSERT INTO idempotency_keys
-    (merchant_id, environment, key, request_method, request_path, request_fingerprint, status, expires_at)
+    (merchant_id, environment, key, request_method, request_path, request_fingerprint, status, created_at, expires_at)
 VALUES (sqlc.arg(merchant_id), sqlc.arg(environment), sqlc.arg(key), sqlc.arg(request_method),
-        sqlc.arg(request_path), sqlc.arg(request_fingerprint), 'in_progress', sqlc.arg(expires_at))
+        sqlc.arg(request_path), sqlc.arg(request_fingerprint), 'in_progress', sqlc.arg(created_at)::timestamptz, sqlc.arg(expires_at))
 ON CONFLICT DO NOTHING;
 
 -- name: GetIdempotencyKey :one

@@ -117,9 +117,9 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, arg GetIdempotencyKeyPa
 
 const insertIdempotencyKey = `-- name: InsertIdempotencyKey :execrows
 INSERT INTO idempotency_keys
-    (merchant_id, environment, key, request_method, request_path, request_fingerprint, status, expires_at)
+    (merchant_id, environment, key, request_method, request_path, request_fingerprint, status, created_at, expires_at)
 VALUES ($1, $2, $3, $4,
-        $5, $6, 'in_progress', $7)
+        $5, $6, 'in_progress', $7::timestamptz, $8)
 ON CONFLICT DO NOTHING
 `
 
@@ -130,6 +130,7 @@ type InsertIdempotencyKeyParams struct {
 	RequestMethod      string
 	RequestPath        string
 	RequestFingerprint []byte
+	CreatedAt          time.Time
 	ExpiresAt          time.Time
 }
 
@@ -143,6 +144,7 @@ func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotenc
 		arg.RequestMethod,
 		arg.RequestPath,
 		arg.RequestFingerprint,
+		arg.CreatedAt,
 		arg.ExpiresAt,
 	)
 	if err != nil {

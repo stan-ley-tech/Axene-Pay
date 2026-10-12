@@ -30,8 +30,10 @@ WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status);
 SELECT * FROM settlement_destinations WHERE id = sqlc.arg(id);
 
 -- name: InsertAttempt :one
-INSERT INTO payment_attempts (public_id, payment_id, provider, routing_reason)
-VALUES (sqlc.arg(public_id), sqlc.arg(payment_id), sqlc.arg(provider), sqlc.arg(routing_reason))
+-- created_at comes from the application clock: the worker compares it
+-- with that clock when sweeping unsubmitted attempts.
+INSERT INTO payment_attempts (public_id, payment_id, provider, routing_reason, created_at)
+VALUES (sqlc.arg(public_id), sqlc.arg(payment_id), sqlc.arg(provider), sqlc.arg(routing_reason), sqlc.arg(created_at)::timestamptz)
 RETURNING *;
 
 -- name: GetAttempt :one
@@ -57,7 +59,7 @@ SET status               = sqlc.arg(to_status),
     last_raw_code        = COALESCE(sqlc.narg(last_raw_code), last_raw_code),
     last_raw_message     = COALESCE(sqlc.narg(last_raw_message), last_raw_message),
     submitted_at         = COALESCE(sqlc.narg(submitted_at), submitted_at),
-    resolved_at          = sqlc.narg(resolved_at),
+    resolved_at          = COALESCE(sqlc.narg(resolved_at), resolved_at),
     next_verification_at = sqlc.narg(next_verification_at),
     verification_count   = verification_count + sqlc.arg(verification_increment),
     updated_at           = now()

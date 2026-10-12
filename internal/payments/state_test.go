@@ -20,6 +20,7 @@ var allowedPaymentTransitions = map[string]bool{
 	"PENDING_PROVIDER>FAILED:status_query":                   true,
 	"PENDING_PROVIDER>FAILED:reconciliation":                 true,
 	"PENDING_PROVIDER>UNRESOLVED:verification_exhausted":     true,
+	"PENDING_PROVIDER>UNRESOLVED:evidence_conflict":          true,
 	"PENDING_VERIFICATION>SUCCEEDED:status_query":            true,
 	"PENDING_VERIFICATION>SUCCEEDED:reconciliation":          true,
 	"PENDING_VERIFICATION>FAILED:status_query":               true,

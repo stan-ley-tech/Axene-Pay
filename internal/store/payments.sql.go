@@ -248,8 +248,8 @@ func (q *Queries) GetSettlementDestinationByID(ctx context.Context, id pgtype.UU
 }
 
 const insertAttempt = `-- name: InsertAttempt :one
-INSERT INTO payment_attempts (public_id, payment_id, provider, routing_reason)
-VALUES ($1, $2, $3, $4)
+INSERT INTO payment_attempts (public_id, payment_id, provider, routing_reason, created_at)
+VALUES ($1, $2, $3, $4, $5::timestamptz)
 RETURNING id, public_id, payment_id, provider, routing_reason, status, provider_reference, provider_receipt, claimed_outcome, claimed_at, verification_count, next_verification_at, last_raw_code, last_raw_message, submission_claimed_at, submitted_at, resolved_at, created_at, updated_at
 `
 
@@ -258,14 +258,18 @@ type InsertAttemptParams struct {
 	PaymentID     pgtype.UUID
 	Provider      string
 	RoutingReason string
+	CreatedAt     time.Time
 }
 
+// created_at comes from the application clock: the worker compares it
+// with that clock when sweeping unsubmitted attempts.
 func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) (PaymentAttempt, error) {
 	row := q.db.QueryRow(ctx, insertAttempt,
 		arg.PublicID,
 		arg.PaymentID,
 		arg.Provider,
 		arg.RoutingReason,
+		arg.CreatedAt,
 	)
 	var i PaymentAttempt
 	err := row.Scan(
@@ -638,7 +642,7 @@ SET status               = $1,
     last_raw_code        = COALESCE($4, last_raw_code),
     last_raw_message     = COALESCE($5, last_raw_message),
     submitted_at         = COALESCE($6, submitted_at),
-    resolved_at          = $7,
+    resolved_at          = COALESCE($7, resolved_at),
     next_verification_at = $8,
     verification_count   = verification_count + $9,
     updated_at           = now()

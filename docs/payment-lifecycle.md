@@ -54,7 +54,7 @@ Candidate states from the master definition that were **not** adopted:
 | `CREATED` | `CANCELLED` | `merchant` |
 | `PENDING_PROVIDER` | `PENDING_VERIFICATION` | `callback` |
 | `PENDING_PROVIDER` | `SUCCEEDED` / `FAILED` | `status_query` (worker polled without a callback), `reconciliation` |
-| `PENDING_PROVIDER` | `UNRESOLVED` | `verification_exhausted` |
+| `PENDING_PROVIDER` | `UNRESOLVED` | `verification_exhausted`, `evidence_conflict` (status query contradicts the attempt, e.g. amount mismatch) |
 | `PENDING_VERIFICATION` | `SUCCEEDED` / `FAILED` | `status_query`, `reconciliation` |
 | `PENDING_VERIFICATION` | `UNRESOLVED` | `verification_exhausted`, `evidence_conflict` |
 | `UNRESOLVED` | `SUCCEEDED` / `FAILED` | `reconciliation` |

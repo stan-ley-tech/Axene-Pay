@@ -99,7 +99,7 @@ var transitions = map[edge][]Evidence{
 	{StatusPendingProvider, StatusPendingVerification}: {EvidenceCallback},
 	{StatusPendingProvider, StatusSucceeded}:           {EvidenceStatusQuery, EvidenceReconciliation},
 	{StatusPendingProvider, StatusFailed}:              {EvidenceStatusQuery, EvidenceReconciliation},
-	{StatusPendingProvider, StatusUnresolved}:          {EvidenceVerificationExhausted},
+	{StatusPendingProvider, StatusUnresolved}:          {EvidenceVerificationExhausted, EvidenceConflict},
 
 	{StatusPendingVerification, StatusSucceeded}:  {EvidenceStatusQuery, EvidenceReconciliation},
 	{StatusPendingVerification, StatusFailed}:     {EvidenceStatusQuery, EvidenceReconciliation},
