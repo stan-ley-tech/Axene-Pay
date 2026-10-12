@@ -39,7 +39,7 @@ jobs:
         run: make vuln
 
   integration:
-    name: Integration tests (PostgreSQL)
+    name: Integration tests (PostgreSQL, RabbitMQ)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -56,8 +56,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4.1-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: axene
+          RABBITMQ_DEFAULT_PASS: axene_ci_only
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
     env:
       TEST_DATABASE_URL: postgres://axene:axene_ci_only@localhost:5432/axene_test?sslmode=disable
+      RABBITMQ_TEST_URL: amqp://axene:axene_ci_only@localhost:5672/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -65,6 +78,8 @@ jobs:
           go-version-file: go.mod
       - name: Integration tests (race detector)
         run: make test-integration
+      - name: RabbitMQ publisher tests
+        run: go test -race -count=1 -tags=rabbitmq ./internal/outbox
 
   generated:
     name: Generated code is current
