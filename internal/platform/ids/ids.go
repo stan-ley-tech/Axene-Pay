@@ -26,6 +26,8 @@ const (
 	Callback              Prefix = "cbk"
 	Event                 Prefix = "evt"
 	ReconException        Prefix = "rex"
+	WebhookEndpoint       Prefix = "whe"
+	WebhookDelivery       Prefix = "whd"
 )
 
 const (

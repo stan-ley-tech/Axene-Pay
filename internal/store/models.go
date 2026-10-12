@@ -174,3 +174,51 @@ type SettlementDestination struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
+
+type WebhookDelivery struct {
+	ID             pgtype.UUID
+	PublicID       string
+	EndpointID     pgtype.UUID
+	EventID        pgtype.UUID
+	EventPublicID  string
+	EventType      string
+	Body           []byte
+	Status         string
+	Attempts       int32
+	NextAttemptAt  *time.Time
+	LastStatusCode *int32
+	LastError      *string
+	DeliveredAt    *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type WebhookDeliveryAttempt struct {
+	ID          int64
+	DeliveryID  pgtype.UUID
+	AttemptedAt time.Time
+	StatusCode  *int32
+	Error       *string
+	DurationMs  int32
+}
+
+type WebhookEndpoint struct {
+	ID               pgtype.UUID
+	PublicID         string
+	MerchantID       pgtype.UUID
+	Environment      string
+	Url              string
+	EventTypes       []string
+	Description      string
+	Status           string
+	SecretCiphertext []byte
+	SecretKeyVersion int32
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type WebhookEventFanout struct {
+	EventID     pgtype.UUID
+	Deliveries  int32
+	FannedOutAt time.Time
+}

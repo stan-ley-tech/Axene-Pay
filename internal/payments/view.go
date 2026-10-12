@@ -2,8 +2,10 @@ package payments
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -79,4 +81,25 @@ func MaskPhone(p string) string {
 		return "****"
 	}
 	return p[:5] + "****" + p[len(p)-3:]
+}
+
+// Owner identifies who a payment belongs to.
+type Owner struct {
+	MerchantID  pgtype.UUID
+	Environment string
+}
+
+// ViewForEvent returns a payment and its owner by public ID without merchant
+// scoping. It exists for internal consumers of payment events (webhook
+// fan-out); merchant-facing code must use Get.
+func (s *Service) ViewForEvent(ctx context.Context, paymentID string) (Owner, View, error) {
+	p, err := s.q.GetPaymentByPublicID(ctx, paymentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Owner{}, View{}, ErrNotFound
+	}
+	if err != nil {
+		return Owner{}, View{}, err
+	}
+	v, err := s.view(ctx, p.ID)
+	return Owner{MerchantID: p.MerchantID, Environment: p.Environment}, v, err
 }

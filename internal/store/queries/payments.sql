@@ -110,3 +110,8 @@ RETURNING id, created_at;
 
 -- name: ListTransitionsForPayment :many
 SELECT * FROM payment_transitions WHERE payment_id = sqlc.arg(payment_id) ORDER BY id;
+
+-- name: GetPaymentByPublicID :one
+-- Unscoped lookup for internal consumers (webhook fan-out). Never use on a
+-- merchant-facing path: use GetPaymentForMerchant there.
+SELECT * FROM payments WHERE public_id = sqlc.arg(public_id);

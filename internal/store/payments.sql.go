@@ -187,6 +187,35 @@ func (q *Queries) GetPaymentByID(ctx context.Context, id pgtype.UUID) (Payment, 
 	return i, err
 }
 
+const getPaymentByPublicID = `-- name: GetPaymentByPublicID :one
+SELECT id, public_id, merchant_id, environment, amount_minor, currency, method, phone_number, description, merchant_reference, settlement_destination_id, status, status_reason, created_at, updated_at FROM payments WHERE public_id = $1
+`
+
+// Unscoped lookup for internal consumers (webhook fan-out). Never use on a
+// merchant-facing path: use GetPaymentForMerchant there.
+func (q *Queries) GetPaymentByPublicID(ctx context.Context, publicID string) (Payment, error) {
+	row := q.db.QueryRow(ctx, getPaymentByPublicID, publicID)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.PublicID,
+		&i.MerchantID,
+		&i.Environment,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Method,
+		&i.PhoneNumber,
+		&i.Description,
+		&i.MerchantReference,
+		&i.SettlementDestinationID,
+		&i.Status,
+		&i.StatusReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPaymentForMerchant = `-- name: GetPaymentForMerchant :one
 SELECT id, public_id, merchant_id, environment, amount_minor, currency, method, phone_number, description, merchant_reference, settlement_destination_id, status, status_reason, created_at, updated_at FROM payments
 WHERE public_id = $1 AND merchant_id = $2
