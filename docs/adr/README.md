@@ -25,3 +25,5 @@ Template:
 | [0005](0005-money-representation.md) | Money representation | Accepted |
 | [0006](0006-database-access-and-migrations.md) | Database access and migrations | Accepted |
 | [0007](0007-idempotency.md) | Idempotency for financial operations | Accepted |
+| [0008](0008-direct-merchant-settlement.md) | Direct merchant settlement as the initial funds flow | Accepted (conditional) |
+| [0009](0009-callback-verification.md) | Provider callbacks are untrusted; outcomes require verification | Accepted |

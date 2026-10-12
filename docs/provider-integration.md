@@ -46,7 +46,7 @@ type Provider interface {
     Limits() Limits
 
     // Submit sends a collection request. It must return an Outcome with
-    // Status UNKNOWN (and a nil error) when it cannot determine whether the
+    // class "unknown" (and a nil error) when it cannot determine whether the
     // provider received the request. Errors are reserved for programming /
     // configuration faults where nothing was sent.
     Submit(ctx context.Context, req SubmitRequest) (SubmitOutcome, error)
@@ -74,10 +74,16 @@ Every provider response maps to one of:
 | `succeeded` | Provider confirms completion | `CONFIRMED_SUCCESS` |
 | `declined` | Customer/issuer declined, insufficient funds, cancelled by user | `CONFIRMED_FAILURE` (not failover-eligible) |
 | `rejected` | Provider refused before execution (validation, limits, config) | `CONFIRMED_FAILURE` (failover-eligible if reason allows) |
-| `unknown` | Timeout, connection error, 5xx after send, unparseable response | `UNKNOWN` |
+| `unknown` | Timeout, connection error, 5xx after send, unparseable response | `SUBMISSION_UNKNOWN` on submit; unchanged on status query |
 
 The raw provider code and message are stored on the attempt for
 investigation; only the class and a normalized reason drive logic.
+
+The attempt states in the table apply to **authenticated** provider
+responses (our own request's response, or a status query). A class parsed
+from a callback is only a *claimed* outcome stored on the attempt; it moves
+the payment to `PENDING_VERIFICATION` and never to a terminal state
+([ADR-0009](adr/0009-callback-verification.md)).
 
 ## 5. Checklist before implementing a real provider
 

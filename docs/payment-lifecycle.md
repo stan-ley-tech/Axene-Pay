@@ -1,112 +1,124 @@
 # Payment Lifecycle
 
-Status: **Proposed** — to be finalized in Phase 1 and validated against
-confirmed M-Pesa behaviour in Phase 2. The master definition lists candidate
-states; below is the reduced model and the reasoning.
+Status: **Accepted for Phase 1** (decision of 2026-10-12, see
+[ADR-0009](adr/0009-callback-verification.md)). To be re-validated against
+confirmed M-Pesa Express behaviour in Phase 2.
 
-## 1. Three separate state machines
+Payment status is an explicit, persisted state machine. It is never derived
+from callback events.
 
-1. **Payment** — what the merchant sees. One per merchant payment intent.
-2. **Payment attempt** — one per provider submission. A payment has 0..n
-   attempts; at most one may be non-terminal at any time.
-3. **Refund**, **payout**, **settlement** — their own machines (Phase 3/5).
+## 1. Separate records, separate machines
+
+| Record | Machine | Owner |
+|--------|---------|-------|
+| Payment | merchant-visible lifecycle (below) | `internal/payments` |
+| Payment attempt | provider execution state (§3) | `internal/payments` (data), `internal/providers` (protocol) |
+| Provider callback | append-only inbound notification, no state machine | `internal/payments` |
+| Refund, reversal, settlement, payout | their own records (Phase 3+) | own modules |
+
+A payment has 0..n attempts; at most one attempt may be unresolved at any
+time.
 
 ## 2. Payment states
 
 | State | Meaning | Terminal |
 |-------|---------|----------|
-| `CREATED` | Accepted and persisted; not yet submitted to a provider | no |
-| `PROCESSING` | An attempt exists that has been sent, or whose outcome is not yet known | no |
-| `REQUIRES_ACTION` | Merchant/customer must perform a step we cannot drive (redirect, 3DS). **Not used by M-Pesa STK Push**; reserved for card flows | no |
-| `SUCCEEDED` | Provider has confirmed the funds were collected (verified callback or status query) | yes |
-| `FAILED` | Provider has confirmed the payment did not and will not complete | yes |
-| `CANCELLED` | Cancelled by merchant **before** any attempt was submitted | yes |
-| `EXPIRED` | The payment's validity window passed and the provider has confirmed no successful completion | yes |
+| `CREATED` | Persisted; no provider request sent yet | no |
+| `PENDING_PROVIDER` | A provider request was sent (or its sending is in doubt); waiting for the provider/customer | no |
+| `PENDING_VERIFICATION` | A callback claims an outcome; Axene is confirming it with an authenticated status query | no |
+| `UNRESOLVED` | Automatic resolution exhausted or contradictory evidence; a reconciliation exception is open | no |
+| `SUCCEEDED` | Verified: the provider confirmed the funds were collected | yes* |
+| `FAILED` | Verified: the provider confirmed the payment did not and will not complete, or it was rejected before any request was sent | yes |
+| `CANCELLED` | Cancelled by the merchant before any provider request was sent | yes |
+| `REVERSED` | A confirmed reversal undid a succeeded payment (reversal workflow is Phase 3+; the state exists so history is never rewritten) | yes |
 
-Dropped from the candidate list: `PENDING`. It is indistinguishable from
-`PROCESSING` from the merchant's point of view in every flow we have
-identified; two names for one state invites inconsistent handling.
+\* `SUCCEEDED` can only move to `REVERSED`.
 
-### Allowed transitions
+Candidate states from the master definition that were **not** adopted:
 
-```
-CREATED ──submit──▶ PROCESSING ──confirmed success──▶ SUCCEEDED
-   │                    │  ├──confirmed failure─────▶ FAILED
-   │                    │  ├──window passed + confirmed not paid──▶ EXPIRED
-   │                    │  └──needs action──▶ REQUIRES_ACTION ──▶ PROCESSING
-   │                    └──attempt failed definitively, safe failover──▶ PROCESSING (new attempt)
-   ├──cancel──▶ CANCELLED
-   └──routing found no eligible provider──▶ FAILED
-```
+- `PENDING` / `PROCESSING` — replaced by the more precise `PENDING_PROVIDER`
+  and `PENDING_VERIFICATION`.
+- `REQUIRES_ACTION` — M-Pesa Express needs no merchant-driven step (the
+  customer acts on their handset). Reintroduced when a flow needs it (cards,
+  3-D Secure).
+- `EXPIRED` — an M-Pesa prompt timing out is reported by the provider as a
+  result code and is a verified `FAILED` with reason `customer_timeout`.
+  Axene's own clock never fails a payment.
 
-Any transition not in this graph is rejected by the backend. Re-applying the
-current state (e.g. duplicate success callback on `SUCCEEDED`) is a no-op,
-recorded as a duplicate, not an error.
+### Allowed transitions and required evidence
+
+| From | To | Allowed evidence |
+|------|----|------------------|
+| `CREATED` | `PENDING_PROVIDER` | `submission` (request sent, accepted, or outcome unknown) |
+| `CREATED` | `FAILED` | `submission_rejected` (provider's authenticated synchronous rejection), `routing` (no eligible provider) |
+| `CREATED` | `CANCELLED` | `merchant` |
+| `PENDING_PROVIDER` | `PENDING_VERIFICATION` | `callback` |
+| `PENDING_PROVIDER` | `SUCCEEDED` / `FAILED` | `status_query` (worker polled without a callback), `reconciliation` |
+| `PENDING_PROVIDER` | `UNRESOLVED` | `verification_exhausted` |
+| `PENDING_VERIFICATION` | `SUCCEEDED` / `FAILED` | `status_query`, `reconciliation` |
+| `PENDING_VERIFICATION` | `UNRESOLVED` | `verification_exhausted`, `evidence_conflict` |
+| `UNRESOLVED` | `SUCCEEDED` / `FAILED` | `reconciliation` |
+| `SUCCEEDED` | `REVERSED` | `reconciliation`, `reversal` (Phase 3+) |
+
+Invariants enforced by `internal/payments` and tested exhaustively:
+
+1. Any (from, to) pair not in the table is rejected.
+2. A transition is rejected if its evidence kind is not listed for it. In
+   particular **a callback can never produce a terminal state**.
+3. Re-applying the current state is a no-op recorded as a duplicate, never
+   an error and never a second side effect.
+4. Terminal states are never left, except `SUCCEEDED → REVERSED`.
 
 ## 3. Attempt (provider execution) states
 
 | State | Meaning |
 |-------|---------|
-| `PENDING_SUBMISSION` | Row persisted, provider not yet called |
+| `PENDING_SUBMISSION` | Persisted; provider not called yet |
 | `SUBMITTED` | Provider acknowledged receipt (not success) |
-| `UNKNOWN` | We cannot tell whether the provider received/executed the request (timeout, connection reset, 5xx after send) |
-| `CONFIRMED_SUCCESS` | Provider confirmed completion |
-| `CONFIRMED_FAILURE` | Provider confirmed it did not complete |
+| `SUBMISSION_UNKNOWN` | Request may or may not have reached the provider (timeout, reset, 5xx after send) |
+| `REJECTED` | Provider refused synchronously before execution |
+| `CONFIRMED_SUCCESS` | Verified success |
+| `CONFIRMED_FAILURE` | Verified failure |
+| `UNRESOLVED` | Verification exhausted or contradictory |
 
-Rules:
+Each attempt also stores: the routing decision and reason, the provider's
+request/response references (e.g. checkout request ID), the outcome claimed
+by the latest callback, verification attempt count, `next_verification_at`,
+and the last provider result code/message (raw, for investigation).
 
-- A timeout or ambiguous error moves the attempt to `UNKNOWN`, never
-  `CONFIRMED_FAILURE`. The payment stays `PROCESSING`.
-- `UNKNOWN` and `SUBMITTED` attempts are resolved by callback or by the
-  worker's status query with backoff. Until resolved, **no new attempt is
-  created** for that payment through any provider.
-- Failover to another provider is allowed only when the current attempt is
-  `CONFIRMED_FAILURE` with a failure reason classified as safe to retry
-  (e.g. provider rejected before execution). Customer-declined outcomes are
-  not failed over.
+## 4. Edge cases
 
-## 4. Conflicting and late outcomes
+| Situation | Behaviour |
+|-----------|-----------|
+| Provider request times out | Attempt `SUBMISSION_UNKNOWN`, payment `PENDING_PROVIDER`; worker resolves by status query. Never resubmitted, never failed over. |
+| Status query times out / errors | Retry with exponential backoff; state unchanged. |
+| Verification retries exhausted | `UNRESOLVED` + reconciliation exception `verification_exhausted`. |
+| Callback claims success, status query says failure (or vice versa) | `UNRESOLVED` + exception `evidence_conflict`. |
+| Status query amount/reference mismatch | `UNRESOLVED` + exception `evidence_mismatch`. |
+| Duplicate callback | Persisted as a duplicate (dedup key), no transition, no effects. |
+| Late callback for a terminal payment, agreeing | Recorded; no-op. |
+| Late callback contradicting a terminal payment | Recorded; exception `late_callback_conflict`; terminal state unchanged. |
+| Callback for unknown reference | Recorded unmatched; exception `unmatched_callback`; nothing else. |
+| Merchant cancels after a provider request was sent | Rejected (`409 payment_not_cancellable`): STK cannot be withdrawn once sent. |
+| Process crashes after creating payment, before calling provider | Worker submits stale `PENDING_SUBMISSION` attempts; the attempt ID is the provider-side idempotency reference where supported. |
 
-Providers can report success after we considered a payment over (e.g. the
-customer completes the prompt late, or a status query was wrong). Rules:
+## 5. Concurrency and atomicity
 
-- A terminal payment state is never overwritten.
-- If a verified provider outcome contradicts a terminal state (success on
-  `FAILED`/`EXPIRED`), the platform records the callback, creates a
-  **reconciliation exception** of type `late_success_on_terminal_payment`,
-  raises an alert, and leaves resolution (refund/reversal or manual
-  correction with audit) to an authorized operator.
-- To minimize this, `FAILED` and `EXPIRED` require positive confirmation from
-  the provider, not just the passage of time.
+Every transition — from the API, callback ingestion, or the worker — goes
+through one function that, in a single database transaction:
 
-## 5. Concurrency
+1. locks the payment row (`SELECT … FOR UPDATE`),
+2. validates the transition and evidence,
+3. updates the payment and attempt,
+4. appends a `payment_transitions` row (from, to, evidence, actor,
+   correlation ID, reference to the callback or status query),
+5. writes any financial effect (Phase 3) and an `outbox_events` row.
 
-All transitions for a payment go through one function that:
+Provider network calls never happen inside a transaction.
 
-1. Begins a transaction.
-2. `SELECT … FOR UPDATE` on the payment row.
-3. Validates the transition against the graph.
-4. Writes the new state, a `payment_transitions` row (from, to, cause,
-   actor, correlation ID, provider event ref), any ledger posting, and an
-   outbox event.
-5. Commits.
+## 6. Operational alerts
 
-Callbacks, status-poll results, and merchant cancels all use this function,
-so concurrent arrivals serialize on the row lock.
-
-## 6. Per-workflow failure analysis (create payment, M-Pesa STK Push)
-
-| Failure point | Authoritative state | Safe behaviour |
-|---------------|---------------------|----------------|
-| Crash before payment row commits | none | Merchant retries with same idempotency key → created fresh |
-| Crash after payment commit, before provider call | payment `CREATED`, attempt `PENDING_SUBMISSION` | Worker picks up stale `PENDING_SUBMISSION` and submits (attempt ID is the idempotency reference) |
-| Provider call times out | attempt `UNKNOWN` | Do not retry submission; status query with backoff |
-| Provider returns error before acceptance | attempt `CONFIRMED_FAILURE` (if error class is definitive) | Payment `FAILED` or failover if safe |
-| Callback never arrives | attempt `SUBMITTED` | Status query after provider-specific delay; alert if unresolved past threshold |
-| Duplicate callback | unchanged | No-op, recorded |
-| Callback for unknown reference | n/a | Persist raw callback, alert, do not create payments from callbacks |
-| DB down when callback arrives | provider retries or not (provider-specific) | Return non-2xx so provider may retry; status query later covers loss |
-| Queue down | outbox accumulates | Drains on recovery |
-
-Operational alerts: attempts in `UNKNOWN` > N minutes; `SUBMITTED` without
-callback > provider SLA; any `late_success_on_terminal_payment`.
+- Attempts in `SUBMISSION_UNKNOWN` or `PENDING_VERIFICATION` older than the
+  configured threshold.
+- Any payment entering `UNRESOLVED`.
+- Any `late_callback_conflict` or `unmatched_callback` exception.

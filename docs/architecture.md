@@ -49,8 +49,8 @@ codebase, backed by PostgreSQL as the authoritative store.
 
 | State | Owner module | Example values | Changes when |
 |-------|--------------|----------------|--------------|
-| Payment lifecycle | `payments` | `PROCESSING`, `SUCCEEDED` | Authoritative outcome is known |
-| Provider execution | `providers` / attempts | `SENT`, `UNKNOWN`, `CONFIRMED_SUCCESS` | Adapter gets a provider response |
+| Payment lifecycle | `payments` | `PENDING_VERIFICATION`, `SUCCEEDED` | Authoritative outcome is known |
+| Provider execution | `providers` / attempts | `SUBMITTED`, `SUBMISSION_UNKNOWN`, `CONFIRMED_SUCCESS` | Adapter gets a provider response |
 | Financial ledger | `ledger` | journal entries | A business event with financial effect is recorded |
 | Settlement | `settlement` | `EXPECTED`, `SETTLED`, `DISCREPANT` | Provider/bank settlement data arrives |
 | Merchant notification | `webhooks` | `PENDING`, `DELIVERED`, `DEAD` | Delivery attempts to merchant endpoint |
@@ -67,7 +67,7 @@ webhook is `RETRYING`. Each has its own table and state machine.
 5. Orchestration selects provider; persist `payment_attempt` with routing
    decision and reason.
 6. Adapter calls provider **outside** any DB transaction. Response mapped to
-   provider execution state; timeout → `UNKNOWN`.
+   provider execution state; timeout → `SUBMISSION_UNKNOWN`.
 7. Persist attempt result + payment transition + outbox event in one
    transaction.
 8. Final outcome arrives by callback or by worker status query; the same

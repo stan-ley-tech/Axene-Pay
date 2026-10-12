@@ -17,44 +17,75 @@ Status values: ✅ done · 🟡 in progress · ⬜ not started.
 | CI runs format check, vet, tests, vulnerability scan | ✅ |
 | Local stack verified end-to-end on a machine with Docker | ⬜ (no Docker on the bootstrap machine) |
 
-## Phase 1 — Core payment foundation ⬜
+## Phase 1 — Core payment foundation 🟡
+
+Built against the clearly labelled `testprovider`; no real provider traffic.
+Decisions: [ADR-0008](adr/0008-direct-merchant-settlement.md),
+[ADR-0009](adr/0009-callback-verification.md),
+[payment-lifecycle.md](payment-lifecycle.md).
 
 Acceptance criteria:
 
-1. Migrations create merchants, applications, api_keys, payments,
-   payment_attempts, payment_transitions, idempotency_keys, outbox_events.
-2. API key authentication; keys hashed; isolation test proves merchant A
-   cannot read merchant B's payment (404, not 403).
-3. `POST /v1/payments` requires `Idempotency-Key`; replay returns identical
-   response; conflicting reuse returns 422; concurrent duplicate requests
-   produce exactly one payment (tested against real PostgreSQL).
-4. `GET /v1/payments/{id}` returns current state and attempt summary.
-5. State machine rejects every transition not in the documented graph
-   (table-driven test covering all state pairs).
-6. Provider interface + `testprovider` (sandbox-only, refuses to load in
-   production) drive a payment to each terminal state, including `UNKNOWN`
-   → resolved by status query.
-7. Every API error matches the OpenAPI error schema (contract test).
-8. Logs carry correlation ID; no secret appears in logs (test with a canary
-   secret).
+1. Migrations create merchants, settlement destinations, merchant provider
+   configurations, API keys, idempotency keys, payments, payment attempts,
+   payment transitions, provider callbacks, outbox events, and
+   reconciliation exceptions. Append-only tables reject `UPDATE`/`DELETE`.
+2. API key authentication with hashed keys; live keys only for approved
+   merchants; isolation test proves merchant A gets `404` for merchant B's
+   payment.
+3. `POST /v1/payments` requires `Idempotency-Key`; replay returns the
+   identical response; conflicting reuse returns `422`; concurrent duplicate
+   requests produce exactly one payment (real PostgreSQL).
+4. `GET /v1/payments/{id}` returns state, settlement destination, and
+   attempt summary; `POST /v1/payments/{id}/cancel` only succeeds from
+   `CREATED`.
+5. State machine rejects every (from, to, evidence) combination not in
+   the documented table; callbacks can never produce terminal states
+   (exhaustive table-driven test).
+6. Routing is deterministic from merchant provider configuration and
+   records the selected provider and reason; no eligible provider →
+   `FAILED` with reason.
+7. Callback ingestion stores the raw callback before interpretation,
+   deduplicates, correlates, and moves the payment to
+   `PENDING_VERIFICATION`; unknown references create an `unmatched_callback`
+   exception.
+8. Worker verifies by status query with backoff: success/failure only on a
+   matching definitive result; timeouts never fail a payment; exhaustion or
+   conflict → `UNRESOLVED` + reconciliation exception; payments with no
+   callback are polled; stale `PENDING_SUBMISSION` attempts are submitted.
+9. Each transition writes exactly one transition row and one outbox event,
+   even under duplicate callbacks and concurrent processing (tested).
+10. Outbox relay publishes to RabbitMQ at least once and marks events
+    published (integration-tested in CI with a RabbitMQ service).
+11. Every API response and error matches the OpenAPI contract (contract
+    test).
+12. Logs carry correlation IDs; a canary secret never appears in logs;
+    Prometheus metrics exposed for requests, transitions, provider calls,
+    verification, and outbox backlog.
+13. Admin CLI creates merchants, settlement destinations, provider
+    configurations, and API keys (key printed once).
 
-## Phase 2 — M-Pesa sandbox integration ⬜
+## Phase 2 — M-Pesa Express sandbox integration ⬜
 
-Prerequisites: D-01, D-04, D-07 resolved; `docs/providers/mpesa.md`
-verified against official docs.
+Prerequisites: external dependencies X-01…X-06 ([decisions.md](decisions.md))
+and `docs/providers/mpesa.md` verified against official documentation.
 
-1. STK Push submit, callback ingestion, STK Query resolution in sandbox.
-2. Timeouts produce `UNKNOWN` and are resolved without resubmission.
-3. Duplicate/out-of-order callbacks are no-ops; forged callbacks rejected.
+1. M-Pesa adapter: OAuth token caching, STK Push submit, callback parsing,
+   STK Query verification, result-code mapping from official docs.
+2. Provider request/response and correlation identifiers persisted.
+3. Environment-specific configuration (local fake, sandbox, production);
+   credentials only from the secret store.
 4. Merchant webhooks signed, retried with backoff, dead-lettered, visible.
-5. Integration tests against recorded sandbox fixtures + opt-in live
-   sandbox test job.
+5. Tests against recorded sandbox fixtures plus an opt-in live sandbox job.
+6. Not production-ready until tested against the real Daraja environment.
 
 ## Phase 3 — Financial foundation ⬜
 
-Prerequisites: D-02, D-12. Ledger, fees, refunds, reconciliation framework,
-settlement records, financial invariant tests (balanced entries, no
-duplicate postings, refund ≤ refundable, concurrency).
+Prerequisite: D-12. Two-book ledger per [ledger.md](ledger.md), fee
+schedules, settlement records and status, reconciliation runs against
+provider statements, exception resolution workflow, refunds/reversals where
+the provider supports them, financial invariant tests (balanced entries, no
+duplicate postings, concurrency).
 
 ## Phase 4 — Merchant & operations applications ⬜
 

@@ -22,7 +22,7 @@ worker ↔ provider APIs. Portals: browser ↔ SvelteKit server ↔ api.
 
 | # | Threat | STRIDE | Control | Phase |
 |---|--------|--------|---------|-------|
-| T1 | Forged provider callback marks unpaid payment as succeeded | Spoofing/Tampering | Unguessable callback path, IP allow-list, field matching against attempt, status-query confirmation per D-07, reconciliation | 2 |
+| T1 | Forged provider callback marks unpaid payment as succeeded | Spoofing/Tampering | Unguessable callback path, IP allow-list, field matching against attempt, status-query confirmation per ADR-0009, reconciliation | 2 |
 | T2 | Replayed callback double-credits merchant | Tampering | State machine no-op on duplicates; ledger unique `(source, reason)` | 1–3 |
 | T3 | Merchant reads/modifies another merchant's data | Info disclosure / EoP | `merchant_id` in every query, isolation tests | 1 |
 | T4 | Stolen API key used to create refunds/payouts | Spoofing | Key hashing, scopes, IP allow-list option, payout approvals & limits, anomaly alerts | 1, 5 |
@@ -34,7 +34,7 @@ worker ↔ provider APIs. Portals: browser ↔ SvelteKit server ↔ api.
 | T10 | Credential stuffing on portals | Spoofing | MFA, rate limits, lockout with backoff | 4 |
 | T11 | CSRF on portal actions | Tampering | SameSite cookies + SvelteKit CSRF origin checks; confirmations for high-impact actions | 4 |
 | T12 | DoS on payment API exhausts provider quotas | DoS | Per-key rate limits, provider-call concurrency limits, circuit breakers | 2 |
-| T13 | Timeout misread as failure → merchant re-charges customer | Tampering (business) | `UNKNOWN` state, no failover until resolved, clear API semantics | 1–2 |
+| T13 | Timeout misread as failure → merchant re-charges customer | Tampering (business) | `SUBMISSION_UNKNOWN` attempt state, no failover until resolved, clear API semantics | 1–2 |
 | T14 | Sandbox credentials/config used in production | Tampering | Config validation binds endpoints to environment; testprovider barred in production | 0–1 |
 | T15 | Compromised dependency | Tampering | Pinned versions, govulncheck, minimal deps | 0 |
 

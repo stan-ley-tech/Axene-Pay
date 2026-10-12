@@ -1,83 +1,94 @@
 # Ledger and Accounting Rules
 
-Status: **Principles accepted; chart of accounts blocked on decision D-02
-(funds flow).** The ledger code in Phase 3 must not be written until D-02 is
-answered, because the accounts Axene may legitimately hold depend on it.
+Status: **Design accepted for the direct-settlement model
+([ADR-0008](adr/0008-direct-merchant-settlement.md)); implementation is
+Phase 3.** Fee amounts and who bears provider fees remain open (D-12).
 
 ## 1. Invariants (enforced in code *and* schema)
 
-1. Every journal entry has ≥ 2 lines and the sum of debits equals the sum of
-   credits **per currency**.
-2. Posted entries and lines are immutable: no `UPDATE`/`DELETE` grants for the
-   application role; corrections are new entries (`reversal` or
-   `adjustment`) that reference the original.
-3. Amounts are positive `bigint` minor units; direction is a separate
-   `debit`/`credit` column. No floats, no signed-amount ambiguity.
-4. Each account has exactly one currency; a line's currency must equal its
-   account's currency.
+1. Every journal entry has ≥ 2 lines and debits equal credits **per currency
+   and per book**.
+2. Posted entries and lines are immutable: the application role has no
+   `UPDATE`/`DELETE`; corrections are new `reversal` or `adjustment` entries
+   referencing the original.
+3. Amounts are positive `bigint` minor units with an explicit
+   `debit`/`credit` direction. No floats.
+4. Each account has exactly one currency and belongs to exactly one book.
 5. Each entry has a `posting_reason` from a closed enum and a source
-   reference `(source_type, source_id)`. Unique constraint on
-   `(source_type, source_id, posting_reason)` prevents duplicate postings
-   from replayed events.
-6. Balances are derived from lines. A cached balance table, if introduced
-   for performance, is updated in the same transaction as the lines and is
-   verifiable by recomputation.
-7. Ledger posting happens in the same DB transaction as the business state
-   change that causes it.
+   reference. A unique constraint on `(source_type, source_id,
+   posting_reason)` makes financial effects exactly-once even when the
+   triggering event is processed more than once.
+6. Balances are derived from lines. Any cached balance is written in the same
+   transaction as its lines and is verifiable by recomputation. There is no
+   free-standing mutable `balance` column.
+7. Postings commit in the same transaction as the business state change
+   that causes them.
 
-## 2. Funds-flow models (decision D-02)
+## 2. Two books
 
-How Axene's ledger looks depends on who legally receives the customer's money.
+Under direct settlement Axene never holds the customer's money, so recording
+the gross payment as Axene's asset or liability would be wrong. The ledger
+therefore keeps two separate, individually balanced books:
 
-### Model A — Technical gateway (merchant owns the collection account)
+### Book `axene` — Axene's own financial positions
 
-The merchant has its own M-Pesa Paybill/Till; money settles to the merchant
-directly. Axene never holds merchant funds.
+What Axene earns, is owed, and owes.
 
-- Axene's ledger tracks: fees receivable from merchants, Axene revenue,
-  and memo (off-balance) records of merchant transaction volume.
-- Simplest regulatory position; settlement is between provider and merchant.
+| Account | Type | Meaning |
+|---------|------|---------|
+| `fees_receivable:{merchant}` | asset | Axene fees charged to a merchant, not yet collected |
+| `fee_revenue` | revenue | Axene processing fees earned |
+| `provider_costs_payable:{provider}` | liability | Provider charges Axene owes (only if D-12 says Axene bears them) |
+| `provider_costs` | expense | Same, expense side |
+| `cash:{axene_bank_account}` | asset | When fees are actually collected |
 
-### Model B — Aggregator / collecting agent (Axene's collection account)
+### Book `settlement_memo` — memorandum of funds Axene does not hold
 
-Customers pay into an Axene-controlled Paybill/Till; Axene owes the merchant
-the net amount and pays out.
+Tracks what the provider should deliver to each merchant destination, so it
+can be reconciled against provider statements. It is never reported as
+Axene's assets or liabilities.
 
-- Axene's ledger tracks: provider receivable, cash at bank (per account),
-  merchant payable (liability), fee revenue, refunds payable, payout
-  clearing.
-- Usually requires specific licensing/authorization (e.g. payment service
-  provider authorization, possibly trust/segregated accounts). The CEO's
-  licensing work determines whether this is allowed.
+| Account | Meaning |
+|---------|---------|
+| `processed_volume:{merchant}` | Gross amount of verified payments |
+| `settlement_expected:{merchant}:{destination}` | Amount the provider should settle to the merchant destination |
+| `provider_fees_withheld:{merchant}` | Fees the provider deducts from the merchant |
+| `settled:{merchant}:{destination}` | Amount confirmed settled by statement |
 
-### Provisional postings for Model B (illustrative, not final)
+### Postings (Phase 3 target)
 
-| Event | Debit | Credit |
-|-------|-------|--------|
-| Payment succeeded (gross G) | `provider_receivable:mpesa` G | `merchant_payable:{merchant}` G |
-| Fee charged (F) | `merchant_payable:{merchant}` F | `fee_revenue` F |
-| Provider settles to bank (S) | `cash:{bank_account}` S | `provider_receivable:mpesa` S |
-| Provider fee withheld (P) | `provider_fees_expense` P | `provider_receivable:mpesa` P |
-| Payout to merchant (N) | `merchant_payable:{merchant}` N | `cash:{bank_account}` N |
-| Refund executed (R) | `merchant_payable:{merchant}` R | `provider_receivable:mpesa` R (or cash, depending on how the provider debits) |
+| Business event | Book | Debit | Credit |
+|----------------|------|-------|--------|
+| Payment verified `SUCCEEDED`, gross G | memo | `settlement_expected:{m}:{d}` G | `processed_volume:{m}` G |
+| Axene fee F charged | axene | `fees_receivable:{m}` F | `fee_revenue` F |
+| Provider fee P withheld from merchant (from statement) | memo | `provider_fees_withheld:{m}` P | `settlement_expected:{m}:{d}` P |
+| Settlement N confirmed by statement | memo | `settled:{m}:{d}` N | `settlement_expected:{m}:{d}` N |
+| Payment `REVERSED` | memo (and axene if fee refunded) | mirror of the original lines, referencing it |
+| Fee collected | axene | `cash:{acct}` F | `fees_receivable:{m}` F |
 
-These only become real after the funds-flow and fee-bearing questions in
-[decisions.md](decisions.md) are answered.
+The posting policy is selected per settlement destination (`owner =
+merchant` today). A future aggregator model adds a different policy (merchant
+payables, payouts) without changing the payment domain.
 
-## 3. Fees
+## 3. Settlement status
 
-- A fee schedule is versioned data, not code constants. Every fee line
-  records which schedule version produced it.
-- Expected provider cost and actual (reconciled) provider cost are recorded
-  separately so routing cost analysis compares real numbers.
-- Rounding rule for percentage fees (half-up, half-even, always-up toward
-  Axene) is a business decision; it must be stated in the schedule and
-  tested.
+Settlement status is its own record (Phase 3), not a payment state: a payment
+can be `SUCCEEDED` while its settlement is `expected`, `settled`, or
+`discrepant`.
 
-## 4. Reporting basis
+## 4. Fees
 
-- Operational dashboards may show provisional numbers (payments
-  `SUCCEEDED`, not yet settled/reconciled). They must be labelled
-  provisional.
+- Fee schedules are versioned data; each fee line records the schedule
+  version that produced it.
+- Expected provider cost and reconciled provider cost are stored separately
+  so routing cost analysis compares real numbers.
+- Rounding rules for percentage fees are part of each schedule and tested.
+- How Axene collects fees when it never holds the funds (invoice, separate
+  charge) is decision D-12.
+
+## 5. Reporting basis
+
+- Operational dashboards may show provisional figures (verified payments not
+  yet settled/reconciled) and must label them provisional.
 - Financial reports come only from posted ledger entries and state their
-  basis (e.g. "posted entries up to T, reconciliation status as of R").
+  basis.
