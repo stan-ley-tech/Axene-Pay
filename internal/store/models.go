@@ -38,6 +38,39 @@ type IdempotencyKey struct {
 	ExpiresAt          time.Time
 }
 
+type JournalEntry struct {
+	ID              pgtype.UUID
+	PublicID        string
+	Book            string
+	PostingReason   string
+	SourceType      string
+	SourceID        string
+	Description     string
+	EffectiveAt     time.Time
+	ReversesEntryID pgtype.UUID
+	RequestID       string
+	CreatedAt       time.Time
+}
+
+type JournalLine struct {
+	ID          int64
+	EntryID     pgtype.UUID
+	AccountID   pgtype.UUID
+	Direction   string
+	AmountMinor int64
+	Currency    string
+}
+
+type LedgerAccount struct {
+	ID         pgtype.UUID
+	Book       string
+	Code       string
+	Currency   string
+	Type       string
+	MerchantID pgtype.UUID
+	CreatedAt  time.Time
+}
+
 type Merchant struct {
 	ID        pgtype.UUID
 	PublicID  string

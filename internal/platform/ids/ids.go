@@ -28,6 +28,12 @@ const (
 	ReconException        Prefix = "rex"
 	WebhookEndpoint       Prefix = "whe"
 	WebhookDelivery       Prefix = "whd"
+	JournalEntry          Prefix = "jnl"
+	FeeSchedule           Prefix = "fsc"
+	Fee                   Prefix = "fee"
+	SettlementBatch       Prefix = "stb"
+	SettlementLine        Prefix = "stl"
+	ReconRun              Prefix = "rcr"
 )
 
 const (
