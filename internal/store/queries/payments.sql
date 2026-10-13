@@ -1,10 +1,12 @@
 -- name: InsertPayment :one
+-- created_at comes from the application clock: fee schedules are selected
+-- by the time the payment was created.
 INSERT INTO payments
     (public_id, merchant_id, environment, amount_minor, currency, method, phone_number,
-     description, merchant_reference, settlement_destination_id)
+     description, merchant_reference, settlement_destination_id, created_at)
 VALUES (sqlc.arg(public_id), sqlc.arg(merchant_id), sqlc.arg(environment), sqlc.arg(amount_minor),
         sqlc.arg(currency), sqlc.arg(method), sqlc.arg(phone_number), sqlc.arg(description),
-        sqlc.narg(merchant_reference), sqlc.arg(settlement_destination_id))
+        sqlc.narg(merchant_reference), sqlc.arg(settlement_destination_id), sqlc.arg(created_at)::timestamptz)
 RETURNING *;
 
 -- name: GetPaymentForMerchant :one

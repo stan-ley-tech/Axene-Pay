@@ -47,6 +47,7 @@ func newWorld(t *testing.T) world {
 	p, err := q.InsertPayment(ctx, store.InsertPaymentParams{
 		PublicID: ids.New(ids.Payment), MerchantID: m.ID, Environment: "sandbox", AmountMinor: 1000,
 		Currency: "KES", Method: "mpesa", PhoneNumber: "254700000000", SettlementDestinationID: d.ID,
+		CreatedAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatal(err)

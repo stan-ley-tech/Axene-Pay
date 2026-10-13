@@ -596,6 +596,7 @@ func (e *env) insertUnsubmitted() (store.Payment, store.PaymentAttempt) {
 	p, err := e.q.InsertPayment(ctx, store.InsertPaymentParams{
 		PublicID: ids.New(ids.Payment), MerchantID: e.pr.MerchantID, Environment: "sandbox", AmountMinor: 10000,
 		Currency: "KES", Method: "mpesa", PhoneNumber: "254700000000", SettlementDestinationID: rows[0].DestinationID,
+		CreatedAt: e.clock.Now(),
 	})
 	if err != nil {
 		e.t.Fatal(err)

@@ -38,6 +38,14 @@ var (
 	ErrIdempotencyInProgress = errors.New("payments: request with this idempotency key is in progress")
 )
 
+// FinancialEffects records the financial consequences of payment outcomes.
+// It runs inside the transition's transaction, so an outcome and its
+// effects commit together, exactly once (internal/accounting).
+type FinancialEffects interface {
+	PaymentSucceeded(ctx context.Context, q *store.Queries, p store.Payment, requestID string) error
+	PaymentReversed(ctx context.Context, q *store.Queries, p store.Payment, requestID string) error
+}
+
 // Clock returns the current time; injected so tests control time.
 type Clock func() time.Time
 
@@ -121,6 +129,7 @@ type Service struct {
 	now         Clock
 	log         *slog.Logger
 	metrics     Metrics
+	effects     FinancialEffects
 }
 
 // Deps are the Service's collaborators.
@@ -133,6 +142,9 @@ type Deps struct {
 	Clock       Clock
 	Logger      *slog.Logger
 	Metrics     Metrics
+	// Effects records financial consequences of outcomes. Optional only for
+	// tests of the lifecycle alone; processes always provide it.
+	Effects FinancialEffects
 }
 
 // NewService validates deps and returns a Service.
@@ -152,6 +164,7 @@ func NewService(d Deps) (*Service, error) {
 	return &Service{
 		pool: d.Pool, q: store.New(d.Pool), providers: d.Providers, callbackURL: d.CallbackURL,
 		policy: d.Policy, now: func() time.Time { return d.Clock().UTC() }, log: d.Logger, metrics: d.Metrics,
+		effects: d.Effects,
 	}, nil
 }
 
@@ -256,7 +269,7 @@ func (s *Service) Create(ctx context.Context, pr merchant.Principal, key idempot
 			PublicID: ids.New(ids.Payment), MerchantID: pr.MerchantID, Environment: string(pr.Environment),
 			AmountMinor: p.Amount.Minor(), Currency: p.Amount.Currency().Code(), Method: string(p.Method),
 			PhoneNumber: p.PhoneNumber, Description: p.Description, MerchantReference: ref,
-			SettlementDestinationID: destID,
+			SettlementDestinationID: destID, CreatedAt: s.now(),
 		})
 		if err != nil {
 			return fmt.Errorf("payments: insert payment: %w", err)
@@ -566,6 +579,20 @@ func (s *Service) transition(ctx context.Context, q *store.Queries, p store.Paym
 		AggregateType: "payment", AggregateID: p.PublicID, TransitionID: &tr.ID, Payload: payload, RequestID: c.requestID,
 	}); err != nil {
 		return false, err
+	}
+	if s.effects != nil {
+		updated := p
+		updated.Status = string(c.to)
+		updated.UpdatedAt = tr.CreatedAt
+		switch c.to {
+		case StatusSucceeded:
+			err = s.effects.PaymentSucceeded(ctx, q, updated, c.requestID)
+		case StatusReversed:
+			err = s.effects.PaymentReversed(ctx, q, updated, c.requestID)
+		}
+		if err != nil {
+			return false, fmt.Errorf("payments: financial effects of %s: %w", c.to, err)
+		}
 	}
 	s.metrics.Transition(from, c.to, c.evidence)
 	s.log.InfoContext(ctx, "payment transition", "request_id", c.requestID, "payment_id", p.PublicID,

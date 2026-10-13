@@ -22,6 +22,88 @@ type ApiKey struct {
 	LastUsedAt  *time.Time
 }
 
+type AuditLog struct {
+	ID         int64
+	Actor      string
+	Action     string
+	TargetType string
+	TargetID   string
+	Detail     []byte
+	RequestID  string
+	CreatedAt  time.Time
+}
+
+type AxeneFee struct {
+	ID                  pgtype.UUID
+	PublicID            string
+	PaymentID           pgtype.UUID
+	MerchantID          pgtype.UUID
+	Environment         string
+	ScheduleID          pgtype.UUID
+	Currency            string
+	BaseAmountMinor     int64
+	PercentageMinor     int64
+	FixedMinor          int64
+	FeeMinor            int64
+	FeePayer            string
+	ProviderFeeBearer   string
+	ReversalPolicy      string
+	Status              string
+	CollectionMechanism *string
+	CollectionReference *string
+	CollectionEvidence  *string
+	CollectedAt         *time.Time
+	NextCollectionAt    *time.Time
+	CollectionAttempts  int32
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type FeeCollectionTerm struct {
+	MerchantID  pgtype.UUID
+	Environment string
+	Mechanism   string
+	UpdatedAt   time.Time
+}
+
+type FeeSchedule struct {
+	ID                pgtype.UUID
+	PublicID          string
+	MerchantID        pgtype.UUID
+	Environment       string
+	Method            string
+	Provider          *string
+	Currency          string
+	PercentagePpm     int32
+	FixedMinor        int64
+	MinimumMinor      *int64
+	MaximumMinor      *int64
+	Rounding          string
+	FeePayer          string
+	ProviderFeeBearer string
+	ReversalPolicy    string
+	EffectiveFrom     time.Time
+	EffectiveTo       *time.Time
+	Status            string
+	Description       string
+	ApprovedBy        *string
+	ApprovalReference *string
+	ActivatedAt       *time.Time
+	CreatedAt         time.Time
+}
+
+type FeeTransition struct {
+	ID         int64
+	FeeID      pgtype.UUID
+	FromStatus *string
+	ToStatus   string
+	Actor      string
+	Reason     *string
+	Evidence   *string
+	RequestID  string
+	CreatedAt  time.Time
+}
+
 type IdempotencyKey struct {
 	MerchantID         pgtype.UUID
 	Environment        string

@@ -328,10 +328,10 @@ func (q *Queries) InsertAttempt(ctx context.Context, arg InsertAttemptParams) (P
 const insertPayment = `-- name: InsertPayment :one
 INSERT INTO payments
     (public_id, merchant_id, environment, amount_minor, currency, method, phone_number,
-     description, merchant_reference, settlement_destination_id)
+     description, merchant_reference, settlement_destination_id, created_at)
 VALUES ($1, $2, $3, $4,
         $5, $6, $7, $8,
-        $9, $10)
+        $9, $10, $11::timestamptz)
 RETURNING id, public_id, merchant_id, environment, amount_minor, currency, method, phone_number, description, merchant_reference, settlement_destination_id, status, status_reason, created_at, updated_at
 `
 
@@ -346,8 +346,11 @@ type InsertPaymentParams struct {
 	Description             string
 	MerchantReference       *string
 	SettlementDestinationID pgtype.UUID
+	CreatedAt               time.Time
 }
 
+// created_at comes from the application clock: fee schedules are selected
+// by the time the payment was created.
 func (q *Queries) InsertPayment(ctx context.Context, arg InsertPaymentParams) (Payment, error) {
 	row := q.db.QueryRow(ctx, insertPayment,
 		arg.PublicID,
@@ -360,6 +363,7 @@ func (q *Queries) InsertPayment(ctx context.Context, arg InsertPaymentParams) (P
 		arg.Description,
 		arg.MerchantReference,
 		arg.SettlementDestinationID,
+		arg.CreatedAt,
 	)
 	var i Payment
 	err := row.Scan(
