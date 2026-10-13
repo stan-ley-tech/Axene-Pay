@@ -1,6 +1,9 @@
 # ADR-0008: Direct merchant settlement as the initial funds flow
 
-- Status: Accepted (conditional — must be confirmed before production, see below)
+- Status: Accepted (conditional — must be confirmed before production, see below).
+  *2026-10-13:* automatic fee collection is now a confirmed requirement
+  ([ADR-0011](0011-fees-and-automatic-collection.md)); direct settlement
+  remains only if a provider-supported fee split is confirmed (X-09).
 - Date: 2026-10-12
 - Resolves: D-02 (provisionally)
 

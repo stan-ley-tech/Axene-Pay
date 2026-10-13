@@ -28,3 +28,4 @@ Template:
 | [0008](0008-direct-merchant-settlement.md) | Direct merchant settlement as the initial funds flow | Accepted (conditional) |
 | [0009](0009-callback-verification.md) | Provider callbacks are untrusted; outcomes require verification | Accepted |
 | [0010](0010-merchant-webhooks.md) | Merchant webhooks | Accepted |
+| [0011](0011-fees-and-automatic-collection.md) | Fee engine and automatic fee collection | Accepted (mechanism pending) |

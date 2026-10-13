@@ -13,6 +13,7 @@ Architectural decisions also get an ADR.
 | D-07 | Callbacks are untrusted; terminal outcomes require an authenticated status query or reconciliation | [ADR-0009](adr/0009-callback-verification.md) | Confirm the STK status query exists with adequate semantics and rate limits |
 | D-03 | Phase 1 merchant model: `pending_review → approved → suspended`; live API keys only for `approved` merchants; KYC/KYB fields added when compliance defines them | [roadmap.md](roadmap.md) | Compliance defines onboarding data and approval steps |
 | D-10 | Idempotency keys retained at least 24 hours (configurable) | [ADR-0007](adr/0007-idempotency.md) | — |
+| D-12 | **Axene automatically collects its fee for each successful payment** (confirmed 2026-10-13). Configurable, versioned, merchant-specific fee schedules; fees accrue only on success; a fee is collected only with reconciled evidence; collection mechanism pluggable and not yet selected | [ADR-0011](adr/0011-fees-and-automatic-collection.md) | Pending items D-12a–g below |
 | D-11 | Public IDs: type prefix + 26-char Crockford base32 of 128 random bits (`pay_…`); UUID primary keys internally | [conventions.md](conventions.md) | — |
 
 ## External dependencies (blocking real M-Pesa traffic, not development)
@@ -30,6 +31,7 @@ these values may be guessed or committed.
 | X-06 | Availability, semantics and rate limits of the STK status query (and transaction status API) | Safaricom docs / account manager |
 | X-07 | Production onboarding requirements | CEO / Safaricom |
 | X-08 | Regulatory/compliance confirmation of the direct-settlement model | CEO / legal |
+| X-09 | Whether Safaricom supports allocating part of a customer payment to Axene (fee split) for the chosen product, and on what terms | CEO / Safaricom |
 
 ## Open
 
@@ -39,7 +41,13 @@ these values may be guessed or committed.
 | D-06 | Operator SSO / identity provider | Phase 4 | — |
 | D-08 | Physical separation of sandbox and live data | Before live launch | Separate databases |
 | D-09 | Data retention periods and data residency (Kenya DPA, CBK) | Before live launch | — |
-| D-12 | Fee model: Axene pricing, who bears provider fees, rounding, and how fees are collected when Axene never holds funds | Phase 3 | — |
+| D-12a | Axene's actual percentage and/or fixed fees, minimums, caps, and negotiated pricing | Before live launch | None: rates are operator-entered data |
+| D-12b | Who bears each M-Pesa/provider fee | Before live launch | Merchant (provisional), subject to the Safaricom agreement |
+| D-12c | **The automatic fee-collection mechanism**: provider-supported split (A), Axene-controlled collection with merchant payouts (B), or another official mechanism (C) | Before live launch | None selected; fees accrue as receivables |
+| D-12d | Final funds flow: direct merchant settlement or Axene-controlled collection | With D-12c | Direct settlement (ADR-0008), conditional |
+| D-12e | Refund and reversal fee policies (refund or retain Axene's fee; unrefunded provider fees) | Before refunds/reversals go live | `pending_approval`: reversals open a review exception |
+| D-12f | Whether pricing differs by merchant, method, provider, or volume | Before live launch | Schedules support merchant, method, and provider |
+| D-12g | Commercial agreements and regulatory approvals required by the chosen mechanism | With D-12c | — |
 | D-13 | Centralized collection + merchant payouts (future funds-flow model) | When commercially/legally justified | Not built |
 | D-14 | Operational ownership: on call, approval of reconciliation corrections | Before live launch | — |
 | D-15 | Card acquiring partner | Phase 5 | — |
