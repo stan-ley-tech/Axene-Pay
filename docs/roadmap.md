@@ -99,31 +99,35 @@ and the official Daraja definitions confirmed (see
 4. Tests against recorded sandbox fixtures plus an opt-in live sandbox job.
 5. Not production-ready until tested against the real Daraja environment.
 
-## Phase 3 — Financial foundation 🟡
+## Phase 3 — Financial foundation ✅
 
 Decisions: [ADR-0011](adr/0011-fees-and-automatic-collection.md),
 [ledger.md](ledger.md). Rates and the collection mechanism stay configurable
 (D-12a–g).
 
-1. ⬜ Ledger primitives: accounts, balanced immutable journal entries
+1. ✅ Ledger primitives: accounts, balanced immutable journal entries
    (enforced at commit), idempotent posting by source and reason,
    compensating reversals, derived balances.
-2. ⬜ Fee schedules: merchant-specific, versioned, effective-dated,
+2. ✅ Fee schedules: merchant-specific, versioned, effective-dated,
    percentage (ppm) + fixed, min/max, rounding mode, fee payer,
    provider-fee bearer, reversal policy; immutable once active; operator CLI.
-3. ⬜ Fee calculation is integer-exact and tested across rounding modes,
+3. ✅ Fee calculation is integer-exact and tested across rounding modes,
    caps, and boundaries.
-4. ⬜ Fees accrue exactly once when a payment succeeds, with ledger postings
+4. ✅ Fees accrue exactly once when a payment succeeds, with ledger postings
    in the same transaction; no schedule → exception, never a silent zero.
-5. ⬜ Fee lifecycle with evidence-based collection; collection mechanism
+5. ✅ Fee lifecycle with evidence-based collection; collection mechanism
    pluggable, `none_configured` by default, unverified mechanisms cannot be
    enabled.
-6. ⬜ Settlement statements import (normalized format) into settlement
+6. ✅ Settlement statements import (normalized format) into settlement
    batches and lines; settlement and provider-fee postings.
-7. ⬜ Reconciliation runs classify matches and discrepancies; operators
+7. ✅ Reconciliation runs classify matches and discrepancies; operators
    resolve exceptions (including `UNRESOLVED` payments) with an audited
    reason; reversals apply the configured fee policy.
-8. ⬜ Payment API shows the accrued Axene fee and its collection status.
+8. ✅ Payment API shows the accrued Axene fee and its collection status.
+
+Automatic fee collection itself is not done: no provider mechanism for it has
+been verified (ADR-0011), so production stays on `none_configured` and fees
+remain `accrued` until there is collection evidence.
 
 Not in Phase 3: refunds through providers (no provider supports them yet),
 invoicing (fallback only), payouts and Axene-controlled collection (need

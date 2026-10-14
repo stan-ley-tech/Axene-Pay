@@ -26,12 +26,29 @@ claimed until it is implemented and verified.
 
 ## Financial records
 
-- **No ledger yet** (Phase 3). Payment success, fees, and settlement are not
-  posted to a double-entry ledger; the design is in [ledger.md](ledger.md).
-- No fee schedules (D-12), settlement records, or statement import.
-- Reconciliation exceptions are recorded and counted, but there is no
-  workflow, API, or UI to investigate and resolve them yet. `UNRESOLVED`
-  payments stay unresolved until that exists (Phase 3/4).
+- **Automatic fee collection is not active.** The requirement is confirmed
+  (ADR-0011), but no provider-supported mechanism is confirmed (D-12c,
+  X-09). Fees accrue as receivables with status `accrued`; only
+  `none_configured` (and `simulated`, in development) can be selected. Axene
+  does not claim it can collect fees from direct-to-merchant payments.
+- No commercial rates exist in the system until an operator creates and
+  activates a schedule with an approval reference (D-12a).
+- Customer-borne fees (surcharges) are modelled but cannot be activated
+  until an approved flow exists.
+- No invoicing (a possible fallback, not the intended mechanism), no
+  merchant payouts, and no Axene-controlled collection (needs D-12c/d and
+  compliance approval).
+- No refunds: no provider adapter supports them yet. Reversals can only be
+  recorded through reconciliation; reversal fee policy defaults to
+  `pending_approval` (D-12e).
+- Settlement statements are accepted only in Axene's normalized CSV format;
+  converters for real provider statement formats arrive with each provider.
+- Reconciliation is run and resolved through `axenectl` only (no operations
+  portal until Phase 4) and is triggered manually, not scheduled.
+- No financial reports beyond ledger balances, the trial balance query, and
+  fee totals by status; no statements for merchants yet.
+- Absorbed provider fees are recorded as owed to the merchant; how they are
+  repaid is not modelled (D-12b).
 
 ## Notifications and events
 
@@ -47,8 +64,10 @@ claimed until it is implemented and verified.
 ## Security and operations
 
 - No rate limiting.
-- Administrative actions (`axenectl`) are not written to an audit log yet;
-  payment state changes are (`payment_transitions`).
+- Merchant setup actions in `axenectl` (merchants, destinations, provider
+  configs, API keys) are not yet in `audit_log`; fee, settlement and
+  reconciliation actions are, and payment state changes are in
+  `payment_transitions`.
 - One database role is used for migrations and runtime; append-only tables
   are protected by triggers. Separate migration/runtime roles with
   restricted grants come with the first deployed environment (D-05).

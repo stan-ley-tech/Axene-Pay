@@ -38,8 +38,8 @@ payment is not Axene's asset or liability. Two books, each balanced:
 | `fees_receivable:{merchant}` | asset | Fees accrued for a merchant, not yet collected |
 | `fee_revenue` | revenue | Axene fees earned (recognized on accrual) |
 | `fee_collections:{mechanism}` | asset | Fees collected, held by the collection mechanism until matched to cash |
-| `provider_fee_expense` | expense | Provider fees Axene bears (only if D-12b says so) |
-| `provider_fees_payable:{provider}` | liability | Provider fees Axene owes |
+| `provider_fee_expense` | expense | Provider fees Axene absorbs (schedule's provider-fee bearer = axene) |
+| `provider_fee_reimbursement:{merchant}` | liability | Absorbed provider fees owed back to the merchant, whose settlement the provider reduced (how they are paid is pending D-12b) |
 
 ### Book `settlement_memo` — funds Axene does not hold
 
@@ -52,6 +52,7 @@ reconciliation. Never reported as Axene's assets or liabilities.
 | `settlement_expected:{merchant}:{destination}` | Amount the provider should settle to the destination |
 | `provider_fees_withheld:{merchant}` | Provider fees deducted from the merchant's settlement |
 | `settled:{merchant}:{destination}` | Amount confirmed settled by statement |
+| `axene_fee_allocated:{merchant}` | Part of a payment the provider allocated to Axene instead of the merchant (only if a fee split is ever confirmed) |
 
 ## 3. Postings
 
@@ -62,7 +63,8 @@ reconciliation. Never reported as Axene's assets or liabilities.
 | Fee collected, with evidence | `fee_collected` | axene | `fee_collections:{mechanism}` F | `fees_receivable:{m}` F |
 | Fee waived or refunded | `fee_reversed` | axene | reverses `fee_accrued` | |
 | Settlement statement line: provider fee P withheld from merchant | `provider_fee_withheld` | memo | `provider_fees_withheld:{m}` P | `settlement_expected:{m}:{d}` P |
-| Provider fee P borne by Axene (D-12b) | `provider_fee_axene` | axene | `provider_fee_expense` P | `provider_fees_payable:{provider}` P |
+| Provider fee P borne by Axene (D-12b) | `provider_fee_axene` | axene | `provider_fee_expense` P | `provider_fee_reimbursement:{m}` P |
+| Statement line: provider allocated Axene's fee A | `adjustment` | memo | `axene_fee_allocated:{m}` A | `settlement_expected:{m}:{d}` A |
 | Settlement statement line: net N settled | `settlement_confirmed` | memo | `settled:{m}:{d}` N | `settlement_expected:{m}:{d}` N |
 | Payment `REVERSED` | `payment_reversed` | memo | reverses `payment_succeeded` | |
 

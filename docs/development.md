@@ -94,6 +94,49 @@ Inspect deliveries with `GET /v1/webhook_endpoints/{id}/deliveries` and
 `GET /v1/webhook_deliveries/{id}`; replay with
 `POST /v1/webhook_deliveries/{id}/replay`.
 
+## Fees, settlement and reconciliation (operators)
+
+No rate is built in. A fee schedule is operator data: create it as a draft,
+then activate it with the approver's name and an approval reference. Every
+change is written to `audit_log`. The values below are **test fixtures only**.
+
+```sh
+go run ./cmd/axenectl fee-schedule create --env sandbox --currency KES \
+  --percentage-ppm 10000 --fixed 0 --rounding half_up --fee-payer merchant \
+  --provider-fee-bearer merchant --reversal-policy pending_approval \
+  --effective-from 2026-10-13T00:00:00Z --description "TEST FIXTURE"
+go run ./cmd/axenectl fee-schedule activate --schedule fsc_… --operator you --approval-ref TEST-FIXTURE
+```
+
+A schedule without `--merchant` is the platform default; a merchant (and
+optionally provider) schedule takes precedence. Schedules are immutable once
+active: end one (`fee-schedule end --at …`) and activate a new version.
+Payments keep the schedule in effect when they were created.
+
+Fees accrue when a payment succeeds and stay `accrued` until collected with
+evidence. The collection mechanism defaults to `none_configured`
+(ADR-0011). In local development only, `fee-terms set --mechanism simulated`
+works because the worker registers the simulated collector there.
+
+Settlement statements are imported in Axene's normalized CSV format (amounts
+in minor units; `gross = provider_fee + net + axene_fee_collected`):
+
+```csv
+provider_reference,receipt,destination,currency,gross,provider_fee,net,settled_at,axene_fee_collected
+tp_0123abcd,,600123,KES,100000,150,99850,2026-10-13T12:00:00Z,
+```
+
+```sh
+go run ./cmd/axenectl settlement import --provider testprovider --env sandbox --file stmt.csv --source-ref stmt-2026-10-13 --operator you
+go run ./cmd/axenectl recon run --provider testprovider --env sandbox --operator you
+go run ./cmd/axenectl recon list --open
+go run ./cmd/axenectl recon resolve --exception rex_… --action payment_succeeded --operator you --note "settled per stmt-2026-10-13"
+```
+
+Resolving with a payment outcome applies it through the payment state
+machine (reconciliation evidence) and accrues or reverses fees exactly as any
+other outcome would; the statement line is then matched on the next run.
+
 ## Endpoints
 
 | Path | Auth | Purpose |
