@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/stan-ley-tech/axene-pay/internal/accounting"
+	"github.com/stan-ley-tech/axene-pay/internal/fees"
 	"github.com/stan-ley-tech/axene-pay/internal/httpapi"
 	"github.com/stan-ley-tech/axene-pay/internal/merchant"
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
@@ -63,8 +65,13 @@ func run() error {
 	policy.ProviderTimeout = cfg.ProviderTimeout
 	metrics := observability.New()
 	observability.Serve(ctx, cfg.MetricsAddr, metrics, logger)
+	feeSvc, err := fees.NewService(fees.Deps{Pool: pool, Production: cfg.Env == config.EnvProduction, Policy: fees.DefaultPolicy(), Logger: logger})
+	if err != nil {
+		return err
+	}
 	paymentSvc, err := payments.NewService(payments.Deps{
 		Pool: pool, Providers: registry, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger, Metrics: metrics,
+		Effects: &accounting.Effects{Fees: feeSvc},
 	})
 	if err != nil {
 		return err

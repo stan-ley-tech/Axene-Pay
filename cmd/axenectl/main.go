@@ -9,6 +9,9 @@
 //	axenectl provider-config create --merchant mer_... --env sandbox --provider testprovider --destination dst_... [--priority 100]
 //	axenectl apikey create --merchant mer_... --env sandbox
 //	axenectl apikey revoke --key key_...
+//
+// Finance commands (fee schedules, fee collection terms, settlement
+// statements, reconciliation) are listed by "axenectl fee-schedule help".
 package main
 
 import (
@@ -44,7 +47,7 @@ const usage = `usage:
 
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) < 2 {
-		return errors.New(usage)
+		return errors.New(usage + "\n\n" + financeUsage)
 	}
 	cmd, flags := args[0]+" "+args[1], args[2:]
 
@@ -60,6 +63,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	svc, err := merchant.NewService(pool, []byte(pepper))
 	if err != nil {
 		return err
+	}
+
+	if isFinance(cmd) {
+		return runFinance(ctx, cmd, flags, pool, svc, out)
 	}
 
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)

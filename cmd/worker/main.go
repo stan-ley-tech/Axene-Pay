@@ -1,7 +1,8 @@
 // Command worker runs Axene's background work: finishing interrupted
 // submissions, verifying provider outcomes by status query, relaying the
 // transactional outbox to RabbitMQ, fanning out and delivering merchant
-// webhooks, and pruning expired idempotency keys.
+// webhooks, collecting Axene fees where a collection mechanism is
+// configured, and pruning expired idempotency keys.
 //
 // Every task is safe to run in several worker instances at once: work is
 // claimed in PostgreSQL with leases and SKIP LOCKED.
@@ -16,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/stan-ley-tech/axene-pay/internal/accounting"
+	"github.com/stan-ley-tech/axene-pay/internal/fees"
 	"github.com/stan-ley-tech/axene-pay/internal/outbox"
 	"github.com/stan-ley-tech/axene-pay/internal/payments"
 	"github.com/stan-ley-tech/axene-pay/internal/platform/config"
@@ -63,8 +66,20 @@ func run() error {
 	policy.ProviderTimeout = cfg.ProviderTimeout
 	metrics := observability.New()
 	observability.Serve(ctx, cfg.MetricsAddr, metrics, logger)
+	// The simulated fee collector moves no money; it exists only so the
+	// collection lifecycle can be exercised in local development and tests.
+	var collectors []fees.Collector
+	if cfg.Env == config.EnvDevelopment || cfg.Env == config.EnvTest {
+		collectors = append(collectors, fees.SimulatedCollector{})
+	}
+	feeSvc, err := fees.NewService(fees.Deps{Pool: pool, Collectors: collectors, Production: cfg.Env == config.EnvProduction,
+		Policy: fees.DefaultPolicy(), Logger: logger})
+	if err != nil {
+		return err
+	}
 	svc, err := payments.NewService(payments.Deps{
 		Pool: pool, Providers: reg, CallbackURL: cfg.CallbackURL, Policy: policy, Logger: logger, Metrics: metrics,
+		Effects: &accounting.Effects{Fees: feeSvc},
 	})
 	if err != nil {
 		return err
@@ -91,7 +106,7 @@ func run() error {
 	relay := outbox.NewRelay(pool, pub, logger, batch)
 
 	logger.Info("worker started", "poll_interval", cfg.PollInterval, "providers", reg.Names())
-	w := worker{svc: svc, webhooks: webhookSvc, relay: relay, metrics: metrics, log: logger}
+	w := worker{svc: svc, fees: feeSvc, webhooks: webhookSvc, relay: relay, metrics: metrics, log: logger}
 	ticker := time.NewTicker(cfg.PollInterval)
 	defer ticker.Stop()
 	lastPrune := time.Time{}
@@ -116,6 +131,7 @@ func run() error {
 
 type worker struct {
 	svc      *payments.Service
+	fees     *fees.Service
 	webhooks *webhooks.Service
 	relay    *outbox.Relay
 	metrics  *observability.Metrics
@@ -147,6 +163,9 @@ func (w worker) tick(ctx context.Context) {
 		if n < batch {
 			break
 		}
+	}
+	if _, err := w.fees.CollectDue(ctx, batch); err != nil {
+		w.log.Error("fee collection", "err", err)
 	}
 	if _, err := w.webhooks.SweepUnfanned(ctx, batch); err != nil {
 		w.log.Error("webhook sweep", "err", err)
