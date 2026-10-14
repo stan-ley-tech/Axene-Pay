@@ -233,6 +233,11 @@ func TestSuccessPostsSettlementMemoAndAccruesFeeOnce(t *testing.T) {
 	if fee.ScheduleID != merchantSc.ID || fee.FeeMinor != 2000 || fee.PercentageMinor != 1500 || fee.FixedMinor != 500 || fee.Status != "accrued" {
 		t.Fatalf("fee %+v", fee)
 	}
+	// The merchant-facing view shows the fee and that it is not yet collected.
+	view, err := e.pay.Get(ctx, e.pr, p.PublicID)
+	if err != nil || view.Fee == nil || view.Fee.Amount != 2000 || view.Fee.Status != "accrued" || view.Fee.ID != fee.PublicID {
+		t.Fatalf("view fee %+v %v", view.Fee, err)
+	}
 	if b := e.balance(ledger.BookAxene, "fees_receivable:"+e.mpub); b != 2000 {
 		t.Fatalf("receivable %d", b)
 	}

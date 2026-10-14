@@ -30,8 +30,19 @@ type PaymentJSON struct {
 		Identifier string `json:"identifier"`
 	} `json:"settlement_destination"`
 	Attempts  []AttemptJSON `json:"attempts"`
+	AxeneFee  *FeeJSON      `json:"axene_fee"`
 	CreatedAt time.Time     `json:"created_at"`
 	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+// FeeJSON is Axene's fee for a payment. Status "accrued" means calculated
+// and owed but not yet collected; "collected" requires collection evidence.
+type FeeJSON struct {
+	ID       string `json:"id"`
+	Amount   int64  `json:"amount"`
+	Currency string `json:"currency"`
+	FeePayer string `json:"fee_payer"`
+	Status   string `json:"status"`
 }
 
 // AttemptJSON is the public JSON representation of a payment attempt.
@@ -57,6 +68,9 @@ func Payment(v payments.View) PaymentJSON {
 	for _, a := range v.Attempts {
 		out.Attempts = append(out.Attempts, AttemptJSON{ID: a.ID, Provider: a.Provider, Status: string(a.Status),
 			CreatedAt: a.CreatedAt.UTC(), SubmittedAt: utc(a.SubmittedAt), ResolvedAt: utc(a.ResolvedAt)})
+	}
+	if v.Fee != nil {
+		out.AxeneFee = &FeeJSON{ID: v.Fee.ID, Amount: v.Fee.Amount, Currency: v.Fee.Currency, FeePayer: v.Fee.FeePayer, Status: v.Fee.Status}
 	}
 	return out
 }

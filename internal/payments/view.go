@@ -23,8 +23,10 @@ type View struct {
 	MerchantReference *string
 	Destination       DestinationView
 	Attempts          []AttemptView
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// Fee is Axene's fee once accrued (successful payments only).
+	Fee       *FeeView
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // DestinationView is where the provider settles the funds (ADR-0008).
@@ -32,6 +34,15 @@ type DestinationView struct {
 	ID         string
 	Type       string
 	Identifier string
+}
+
+// FeeView is Axene's fee for a payment and its collection status.
+type FeeView struct {
+	ID       string
+	Amount   int64
+	Currency string
+	FeePayer string
+	Status   string
 }
 
 // AttemptView summarizes one provider attempt.
@@ -64,6 +75,11 @@ func (s *Service) view(ctx context.Context, paymentID pgtype.UUID) (View, error)
 		Destination: DestinationView{ID: d.PublicID, Type: d.Type, Identifier: d.Identifier},
 		Attempts:    make([]AttemptView, 0, len(attempts)),
 		CreatedAt:   p.CreatedAt, UpdatedAt: p.UpdatedAt,
+	}
+	if f, err := s.q.GetFeeByPaymentID(ctx, p.ID); err == nil {
+		v.Fee = &FeeView{ID: f.PublicID, Amount: f.FeeMinor, Currency: f.Currency, FeePayer: f.FeePayer, Status: f.Status}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return View{}, err
 	}
 	for _, a := range attempts {
 		v.Attempts = append(v.Attempts, AttemptView{

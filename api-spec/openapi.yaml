@@ -499,6 +499,25 @@ components:
         attempts:
           type: array
           items: { $ref: "#/components/schemas/PaymentAttempt" }
+        axene_fee:
+          description: |
+            Axene's fee for this payment, present once the payment has
+            succeeded and a fee schedule applied. `accrued` means calculated
+            and owed but not yet collected; `collected` is set only when
+            collection evidence has been recorded. Fees are never deducted
+            from what this API reports as the payment amount.
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [id, amount, currency, fee_payer, status]
+              properties:
+                id: { type: string, pattern: "^fee_" }
+                amount: { type: integer, format: int64, description: Minor units. }
+                currency: { type: string }
+                fee_payer: { type: string, enum: [merchant, customer] }
+                status:
+                  type: string
+                  enum: [accrued, collection_pending, collected, collection_failed, waived, refunded, review_required]
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
