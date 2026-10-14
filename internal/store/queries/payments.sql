@@ -23,9 +23,10 @@ SELECT * FROM payments WHERE id = sqlc.arg(id);
 SELECT * FROM payments WHERE id = sqlc.arg(id) FOR UPDATE;
 
 -- name: UpdatePaymentStatus :execrows
--- Guarded by the expected current status in addition to the row lock.
+-- Guarded by the expected current status in addition to the row lock. updated_at
+-- comes from the application clock because reconciliation compares it.
 UPDATE payments
-SET status = sqlc.arg(to_status), status_reason = sqlc.narg(status_reason), updated_at = now()
+SET status = sqlc.arg(to_status), status_reason = sqlc.narg(status_reason), updated_at = sqlc.arg(updated_at)::timestamptz
 WHERE id = sqlc.arg(id) AND status = sqlc.arg(from_status);
 
 -- name: GetSettlementDestinationByID :one

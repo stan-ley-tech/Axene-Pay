@@ -553,7 +553,7 @@ func (s *Service) transition(ctx context.Context, q *store.Queries, p store.Paym
 		return false, err
 	}
 	reason := nonEmpty(c.reason)
-	n, err := q.UpdatePaymentStatus(ctx, store.UpdatePaymentStatusParams{ID: p.ID, ToStatus: string(c.to), FromStatus: string(from), StatusReason: reason})
+	n, err := q.UpdatePaymentStatus(ctx, store.UpdatePaymentStatusParams{ID: p.ID, ToStatus: string(c.to), FromStatus: string(from), StatusReason: reason, UpdatedAt: s.now()})
 	if err != nil {
 		return false, err
 	}

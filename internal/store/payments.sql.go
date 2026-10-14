@@ -718,22 +718,25 @@ func (q *Queries) UpdateAttemptStatus(ctx context.Context, arg UpdateAttemptStat
 
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :execrows
 UPDATE payments
-SET status = $1, status_reason = $2, updated_at = now()
-WHERE id = $3 AND status = $4
+SET status = $1, status_reason = $2, updated_at = $3::timestamptz
+WHERE id = $4 AND status = $5
 `
 
 type UpdatePaymentStatusParams struct {
 	ToStatus     string
 	StatusReason *string
+	UpdatedAt    time.Time
 	ID           pgtype.UUID
 	FromStatus   string
 }
 
-// Guarded by the expected current status in addition to the row lock.
+// Guarded by the expected current status in addition to the row lock. updated_at
+// comes from the application clock because reconciliation compares it.
 func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStatusParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updatePaymentStatus,
 		arg.ToStatus,
 		arg.StatusReason,
+		arg.UpdatedAt,
 		arg.ID,
 		arg.FromStatus,
 	)

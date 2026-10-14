@@ -250,7 +250,7 @@ func (q *Queries) ListCallbacksForAttempt(ctx context.Context, attemptID pgtype.
 }
 
 const listOpenReconExceptions = `-- name: ListOpenReconExceptions :many
-SELECT id, public_id, type, payment_id, attempt_id, callback_id, detail, status, created_at, resolved_at, resolved_by, resolution FROM reconciliation_exceptions WHERE status = 'open' ORDER BY created_at, id LIMIT $1
+SELECT id, public_id, type, payment_id, attempt_id, callback_id, detail, status, created_at, resolved_at, resolved_by, resolution, settlement_line_id, run_id FROM reconciliation_exceptions WHERE status = 'open' ORDER BY created_at, id LIMIT $1
 `
 
 func (q *Queries) ListOpenReconExceptions(ctx context.Context, maxRows int32) ([]ReconciliationException, error) {
@@ -275,6 +275,8 @@ func (q *Queries) ListOpenReconExceptions(ctx context.Context, maxRows int32) ([
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.Resolution,
+			&i.SettlementLineID,
+			&i.RunID,
 		); err != nil {
 			return nil, err
 		}
@@ -324,7 +326,7 @@ func (q *Queries) ListOutboxEventsForAggregate(ctx context.Context, aggregateID 
 }
 
 const listReconExceptionsForPayment = `-- name: ListReconExceptionsForPayment :many
-SELECT id, public_id, type, payment_id, attempt_id, callback_id, detail, status, created_at, resolved_at, resolved_by, resolution FROM reconciliation_exceptions WHERE payment_id = $1 ORDER BY created_at, id
+SELECT id, public_id, type, payment_id, attempt_id, callback_id, detail, status, created_at, resolved_at, resolved_by, resolution, settlement_line_id, run_id FROM reconciliation_exceptions WHERE payment_id = $1 ORDER BY created_at, id
 `
 
 func (q *Queries) ListReconExceptionsForPayment(ctx context.Context, paymentID pgtype.UUID) ([]ReconciliationException, error) {
@@ -349,6 +351,8 @@ func (q *Queries) ListReconExceptionsForPayment(ctx context.Context, paymentID p
 			&i.ResolvedAt,
 			&i.ResolvedBy,
 			&i.Resolution,
+			&i.SettlementLineID,
+			&i.RunID,
 		); err != nil {
 			return nil, err
 		}

@@ -262,18 +262,44 @@ type ProviderCallback struct {
 }
 
 type ReconciliationException struct {
-	ID         pgtype.UUID
-	PublicID   string
-	Type       string
-	PaymentID  pgtype.UUID
-	AttemptID  pgtype.UUID
-	CallbackID pgtype.UUID
-	Detail     []byte
-	Status     string
-	CreatedAt  time.Time
-	ResolvedAt *time.Time
-	ResolvedBy *string
-	Resolution *string
+	ID               pgtype.UUID
+	PublicID         string
+	Type             string
+	PaymentID        pgtype.UUID
+	AttemptID        pgtype.UUID
+	CallbackID       pgtype.UUID
+	Detail           []byte
+	Status           string
+	CreatedAt        time.Time
+	ResolvedAt       *time.Time
+	ResolvedBy       *string
+	Resolution       *string
+	SettlementLineID pgtype.UUID
+	RunID            pgtype.UUID
+}
+
+type ReconciliationRun struct {
+	ID           pgtype.UUID
+	PublicID     string
+	Provider     string
+	Environment  string
+	RunBy        string
+	StartedAt    time.Time
+	FinishedAt   *time.Time
+	LinesMatched int32
+	Exceptions   int32
+}
+
+type SettlementBatch struct {
+	ID              pgtype.UUID
+	PublicID        string
+	Provider        string
+	Environment     string
+	SourceReference string
+	SourceSha256    []byte
+	LineCount       int32
+	ImportedBy      string
+	ImportedAt      time.Time
 }
 
 type SettlementDestination struct {
@@ -288,6 +314,25 @@ type SettlementDestination struct {
 	Status      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type SettlementLine struct {
+	ID                     pgtype.UUID
+	PublicID               string
+	BatchID                pgtype.UUID
+	LineNumber             int32
+	ProviderReference      *string
+	Receipt                *string
+	DestinationIdentifier  string
+	Currency               string
+	GrossMinor             int64
+	ProviderFeeMinor       int64
+	NetMinor               int64
+	AxeneFeeCollectedMinor *int64
+	SettledAt              time.Time
+	PaymentID              pgtype.UUID
+	MatchStatus            string
+	CreatedAt              time.Time
 }
 
 type WebhookDelivery struct {

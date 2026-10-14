@@ -240,3 +240,41 @@ func ptrStr(p *string) string {
 	}
 	return *p
 }
+
+// ReconcileTx applies an authorized reconciliation outcome to a payment
+// inside the caller's transaction: UNRESOLVED or pending payments to
+// SUCCEEDED or FAILED, and SUCCEEDED to REVERSED. The state machine admits
+// these transitions only on reconciliation evidence; financial effects run
+// as for any other transition. The latest attempt is resolved to match.
+func (s *Service) ReconcileTx(ctx context.Context, q *store.Queries, paymentID pgtype.UUID, to Status, actor, reason, requestID string) error {
+	payment, err := q.LockPayment(ctx, paymentID)
+	if err != nil {
+		return err
+	}
+	if _, err := CheckTransition(Status(payment.Status), to, EvidenceReconciliation); err != nil {
+		return err
+	}
+	attempts, err := q.ListAttemptsForPayment(ctx, payment.ID)
+	if err != nil {
+		return err
+	}
+	var attemptID pgtype.UUID
+	if len(attempts) > 0 && (to == StatusSucceeded || to == StatusFailed) {
+		a := attempts[len(attempts)-1]
+		attemptID = a.ID
+		target := AttemptConfirmedSuccess
+		if to == StatusFailed {
+			target = AttemptConfirmedFailure
+		}
+		if _, err := CheckAttemptTransition(AttemptStatus(a.Status), target); err == nil {
+			now := s.now()
+			msg := "resolved by reconciliation: " + reason
+			if err := s.setAttempt(ctx, q, a, target, attemptUpdate{resolvedAt: &now, rawMessage: &msg}); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = s.transition(ctx, q, payment, change{to: to, evidence: EvidenceReconciliation, actor: actor,
+		reason: reason, attemptID: attemptID, requestID: requestID})
+	return err
+}
